@@ -99,12 +99,18 @@ async function setSimulationTarget(vscode, root, result) {
     }
     config = { sources: ordered, top: result.name, standard: '2008', stopTime: result.duration, libraryPaths: [] };
   }
-  config = { ...config, sources: [...config.sources.filter(item => item !== generated)] };
+  const retained = [], missing = [];
+  for (const item of config.sources.filter(item => item !== generated)) {
+    try { await fs.lstat(path.join(root, item)); retained.push(item); }
+    catch (error) { if (error.code === 'ENOENT') missing.push(item); else throw error; }
+  }
+  config = { ...config, sources: retained };
   if (!config.sources.includes(source)) config.sources.push(source);
   config.sources.push(generated); config.top = result.name; config.standard = '2008';
   if (tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
   core.validateConfig(config); await core.resolveProject(root, config);
-  if (await vscode.window.showInformationMessage(`设置顶层 ${config.top}，VHDL-2008，上限 ${config.stopTime}？\n编译顺序：${config.sources.join(' → ')}\n已有库目录保持。`, { modal: true }, '设置') !== '设置') return;
+  const cleanup = missing.length ? `\n将从配置中移除已删除的源文件：${missing.join('、')}。若仍需要这些依赖，请取消并重新配置。` : '';
+  if (await vscode.window.showInformationMessage(`设置顶层 ${config.top}，VHDL-2008，上限 ${config.stopTime}？\n编译顺序：${config.sources.join(' → ')}\n已有库目录保持。${cleanup}`, { modal: true }, '设置') !== '设置') return;
   // Recheck after user interaction; never replace a symlink or dirty editor buffer.
   try { const info = await fs.lstat(filename); if (!info.isFile() || info.isSymbolicLink()) throw new Error('vhdl.sim.json 必须是普通文件。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (vscode.workspace.textDocuments.some(doc => doc.isDirty && doc.uri.fsPath === filename)) throw new Error('配置存在未保存修改，已停止更新。');
