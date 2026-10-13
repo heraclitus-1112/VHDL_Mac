@@ -5,3 +5,6 @@ acceptance/**
 node_modules/**
 .nvc-build/**
 *.vsix
+packages/**
+examples/**
+docs/**

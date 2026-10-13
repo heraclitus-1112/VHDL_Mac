@@ -1,0 +1,10 @@
+{
+  "sources": [
+    "counter.vhd",
+    "tb_counter.vhd"
+  ],
+  "top": "tb_counter",
+  "standard": "2008",
+  "stopTime": "1us",
+  "libraryPaths": []
+}

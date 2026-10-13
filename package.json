@@ -4,6 +4,7 @@
   "description": "按项目配置运行 NVC 仿真，并使用官方 Surfer 查看本次 FST 波形。",
   "version": "0.2.2",
   "publisher": "local-vhdl",
+  "repository": { "type": "git", "url": "https://github.com/heraclitus-1112/VHDL_Mac.git" },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages", "Other"],

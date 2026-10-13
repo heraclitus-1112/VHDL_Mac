@@ -1,6 +1,25 @@
-# NVC Runner · VHDL 仿真
+# VHDL Mac · NVC Runner
 
 在 VS Code 中点击播放按钮，按配置顺序执行 NVC 分析、展开、仿真，成功后默认在独立窗口打开官方 Surfer 波形查看器。
+
+## 在 Mac 上安装
+
+需要先安装 VS Code 和 Homebrew；在终端执行：
+
+```sh
+brew install nvc
+git clone https://github.com/heraclitus-1112/VHDL_Mac.git
+cd VHDL_Mac
+code --install-extension surfer-project.surfer
+code --install-extension packages/nvc-runner-0.2.2.vsix
+code examples/counter
+```
+
+`code` 不在 PATH 中时，在 VS Code 命令面板执行 **Shell Command: Install 'code' command in PATH**，或在扩展视图中选择 **从 VSIX 安装**。
+
+打开 `examples/counter/tb_counter.vhd`，点击右上角 ▶ 即可运行已配置示例。NVC 输出应出现 `TB_PASS`，Surfer 在独立窗口打开波形；选中层级后点击 Variables 中的信号名加入波形图。详细操作见 [中文使用说明](docs/使用说明.md)。
+
+本仓库提供扩展源码和预构建 VSIX；NVC 与官方 Surfer 需单独安装。当前验证环境为 Apple Silicon Mac、NVC 1.23.0、VS Code 1.132.0。扩展需要 VS Code 1.85 或以上；独立窗口功能在窗口命令不可用时回退到并排。
 
 ## 使用
 

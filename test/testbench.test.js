@@ -47,7 +47,7 @@ test('generate distinct drivers, explicit associations and honest completion mes
 test('real NVC runs generated counter stimuli and generic bus values',async t=>{
  let executable;try{executable=await core.resolveNvc('');}catch{t.skip('NVC is not installed');return;}
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'generated NVC project ')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const counter=await fs.readFile(path.resolve(__dirname,'../../../..','outputs/vhdl-vscode-example/counter.vhd'),'utf8').catch(()=>`library ieee;use ieee.std_logic_1164.all;use ieee.numeric_std.all;entity counter is port(clk,rst,en:in std_logic;count:out unsigned(3 downto 0));end;architecture rtl of counter is signal v:unsigned(3 downto 0):=(others=>'0');begin process(clk)begin if rising_edge(clk)then if rst='1'then v<=(others=>'0');elsif en='1'then v<=v+1;end if;end if;end process;count<=v;end;`);
+ const counter=await fs.readFile(path.resolve(__dirname,'../examples/counter/counter.vhd'),'utf8');
  const model=tb.instantiateEntity(tb.parseEntities(counter)[0]);
  let code=tb.generateTestbench(model,{name:'tb_generated',architecture:'rtl',duration:'300ns',inputs:{clk:{mode:'clock',value:'0',start:'0ns',period:'10ns'},rst:{mode:'events',value:'0ns=1;20ns=0'},en:{mode:'events',value:'0ns=0;20ns=1;100ns=0;130ns=1'}}});
  code=code.replace('end architecture sim;',`check_values:process begin wait for 21 ns;assert tb_count=0 severity failure;wait for 80 ns;assert tb_count=8 severity failure;wait for 20 ns;assert tb_count=8 severity failure;wait for 30 ns;assert tb_count=10 severity failure;wait;end process;end architecture sim;`);

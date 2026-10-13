@@ -1,6 +1,6 @@
 # 自动测试证据
 
-运行时：`/Users/macbookair/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`（v24.19.0）。
+运行时：`node`（v24.19.0）。
 
 1. 在 `src/core.js` 尚不存在时编写核心测试，运行 `node --test test/core.test.js`：11 项失败，均为对应 API 缺失的断言；原始输出 `red-evidence.txt`。
 2. 实现核心后初轮 9/11 通过。剩余两个断言因 macOS `/var` 与 `/private/var` 的真实路径不同；将 fixture 返回真实路径后保持实路径安全要求。
@@ -24,7 +24,7 @@
 
 先添加 testbench/generate 模块与命令的失败测试，再实现；配置在确认期间外部修改的测试先失败，加入内容重检后通过。真实 NVC 初次验证发现中文 report 字符串不兼容，改为 ASCII STIMULUS_DONE 并保留中文注释后通过。
 
-真实 NVC 验证生成的计数器时钟、复位、使能和泛型 unsigned/signed/boolean/positive 输入，测试专用断言检查了实际值。用户正常 VS Code 窗口中，对 `/Users/macbookair/exoC03/Exo1/mux21.vhd` 分别设置 A/B/SEL 时序，生成 `tb_mux21_inputs.vhd`、确认顶层配置后立即点击运行，生成 373 字节 FST。官方 Surfer 显示四个信号的波形；没有输出断言的生成文件显示 STIMULUS_DONE，而不是 TB_PASS。
+真实 NVC 验证生成的计数器时钟、复位、使能和泛型 unsigned/signed/boolean/positive 输入，测试专用断言检查了实际值。用户正常 VS Code 窗口中，对 `Exo1/mux21.vhd` 分别设置 A/B/SEL 时序，生成 `tb_mux21_inputs.vhd`、确认顶层配置后立即点击运行，生成 373 字节 FST。官方 Surfer 显示四个信号的波形；没有输出断言的生成文件显示 STIMULUS_DONE，而不是 TB_PASS。
 
 
 ## 0.2.2 独立波形窗口
