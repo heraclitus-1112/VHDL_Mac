@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const core = require('./core');
+const generator = require('./generate');
 let activeInstance;
 function createExtension(vscode, context) {
   const locks = new Map();
@@ -150,8 +151,20 @@ function createExtension(vscode, context) {
     if (entry?.running) entry.controller.abort();
     else await vscode.window.showInformationMessage('当前项目没有正在运行的 NVC 仿真。');
   }
-  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.cancel', cancel));
-  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); }, run, configure, cancel };
+  async function generate(uri) {
+    const sourceUri = uri?.fsPath ? uri : vscode.window.activeTextEditor?.document.uri;
+    const generated = await withProject(sourceUri, false, (_, root) => generator.generateWizard(vscode, root, sourceUri));
+    if (!generated) return;
+    output.appendLine(`已生成测试平台：${generated.filename}`);
+    const choice = await vscode.window.showQuickPick(['设为仿真顶层', '仅生成文件'], { title: 'Testbench 已生成：下一步', ignoreFocusOut: true });
+    if (choice === '设为仿真顶层') {
+      const configured = await withProject(vscode.Uri.file(generated.source), false, (_, root) => generator.setSimulationTarget(vscode, root, generated));
+      if (configured) { output.appendLine(`已设置仿真顶层：${configured.top}`); await vscode.window.showInformationMessage('测试平台与配置已就绪，点击播放按钮运行。输入激励的功能正确性请通过 assert 检查。'); }
+    }
+    return generated;
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
+  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); }, run, configure, cancel, generate };
 }
 function activate(context) { activeInstance = createExtension(require('vscode'), context); context.subscriptions.push(activeInstance); }
 function deactivate() { activeInstance?.dispose(); activeInstance = undefined; }

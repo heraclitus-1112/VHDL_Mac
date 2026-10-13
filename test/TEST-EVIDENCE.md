@@ -18,3 +18,10 @@
 
 7. 规格审查提供实际 NVC assertion 输出，新增 `** Failure` 和 `Process/Procedure ... at file:line` 回归 fixture，另使用真实 Node 子进程验证 Warning 不阻止成功返回波形。修复前 3 项失败（`red-runtime-diagnostics-evidence.txt`）：Failure 未识别，调用帧前缀污染路径。
 8. 将 Failure 归类为 error，提取运行时调用帧后的真实路径。最终 `node --test test/*.test.js`：23/23 通过（`green-evidence.txt`）；`node --check src/core.js` 与 `git diff --check` 通过。
+
+
+## 0.2.0 自动生成输入激励
+
+先添加 testbench/generate 模块与命令的失败测试，再实现；配置在确认期间外部修改的测试先失败，加入内容重检后通过。真实 NVC 初次验证发现中文 report 字符串不兼容，改为 ASCII STIMULUS_DONE 并保留中文注释后通过。
+
+真实 NVC 验证生成的计数器时钟、复位、使能和泛型 unsigned/signed/boolean/positive 输入，测试专用断言检查了实际值。用户正常 VS Code 窗口中，对 `/Users/macbookair/exoC03/Exo1/mux21.vhd` 分别设置 A/B/SEL 时序，生成 `tb_mux21_inputs.vhd`、确认顶层配置后立即点击运行，生成 373 字节 FST。官方 Surfer 显示四个信号的波形；没有输出断言的生成文件显示 STIMULUS_DONE，而不是 TB_PASS。
