@@ -2,7 +2,7 @@
   "name": "nvc-runner",
   "displayName": "NVC Runner · VHDL 仿真",
   "description": "按项目配置运行 NVC 仿真，并使用官方 Surfer 查看本次 FST 波形。",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "local-vhdl",
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
@@ -29,7 +29,10 @@
     },
     "configuration": {
       "title": "NVC Runner",
-      "properties": { "nvcRunner.nvcPath": { "type": "string", "default": "", "scope": "machine-overridable", "description": "NVC 可执行文件完整路径。留空时从 PATH、/opt/homebrew/bin/nvc、/usr/local/bin/nvc 查找。", "restricted": true } }
+      "properties": {
+        "nvcRunner.nvcPath": { "type": "string", "default": "", "scope": "machine-overridable", "description": "NVC 可执行文件完整路径。留空时从 PATH、/opt/homebrew/bin/nvc、/usr/local/bin/nvc 查找。", "restricted": true },
+        "nvcRunner.waveformWindow": { "type": "string", "enum": ["newWindow", "beside"], "enumDescriptions": ["在独立的 VS Code 编辑器窗口显示 Surfer 波形。", "在原窗口中并排显示代码和波形。"], "default": "newWindow", "description": "仿真成功后波形的默认显示位置。" }
+      }
     },
     "jsonValidation": [{ "fileMatch": "vhdl.sim.json", "url": "./schemas/config.schema.json" }]
   }

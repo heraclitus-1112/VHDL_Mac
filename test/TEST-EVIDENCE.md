@@ -25,3 +25,8 @@
 先添加 testbench/generate 模块与命令的失败测试，再实现；配置在确认期间外部修改的测试先失败，加入内容重检后通过。真实 NVC 初次验证发现中文 report 字符串不兼容，改为 ASCII STIMULUS_DONE 并保留中文注释后通过。
 
 真实 NVC 验证生成的计数器时钟、复位、使能和泛型 unsigned/signed/boolean/positive 输入，测试专用断言检查了实际值。用户正常 VS Code 窗口中，对 `/Users/macbookair/exoC03/Exo1/mux21.vhd` 分别设置 A/B/SEL 时序，生成 `tb_mux21_inputs.vhd`、确认顶层配置后立即点击运行，生成 373 字节 FST。官方 Surfer 显示四个信号的波形；没有输出断言的生成文件显示 STIMULUS_DONE，而不是 TB_PASS。
+
+
+## 0.2.2 独立波形窗口
+
+先添加 waveform 模块的失败测试，再实现。43 项测试通过，覆盖精确波形 URI 的移动、并排设置、旧版本缺少命令的回退、窗口创建异常回退。使用用户正常 VS Code 运行 Exo1 后，Surfer 自定义编辑器出现在“窗口 2”中，Webview parentId=4，独立窗口显示 tb_a/tb_b/tb_sel/tb_y 实际波形，代码留在原窗口。默认配置为 newWindow。

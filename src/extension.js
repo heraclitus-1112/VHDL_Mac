@@ -4,6 +4,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const core = require('./core');
 const generator = require('./generate');
+const { openWaveform } = require('./waveform');
 let activeInstance;
 function createExtension(vscode, context) {
   const locks = new Map();
@@ -136,7 +137,8 @@ function createExtension(vscode, context) {
           updateDiagnostics(result.output, root);
           await surfer.activate();
           if (controller.signal.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; }
-          await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(result.wavePath), 'surfer.waveformViewer', vscode.ViewColumn.Beside);
+          const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
+          await openWaveform(vscode, vscode.Uri.file(result.wavePath), windowMode, message => output.appendLine(message));
           output.appendLine(`\n本次波形：${result.wavePath}`);
           return result;
         } catch (error) { if (error.output !== undefined) updateDiagnostics(error.output, root); throw error; }
