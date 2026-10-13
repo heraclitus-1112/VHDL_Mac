@@ -81,3 +81,15 @@ test('parse actual NVC 1.23 arrow location without column',()=>{
 });
 test('reject source alias into dedicated build directory',async t=>{const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','user.vhd'),'source');await fs.symlink(path.join(root,'.nvc-build','user.vhd'),path.join(root,'alias.vhd'));await assert.rejects(core.resolveProject(root,{...config,sources:['alias.vhd']}),/构建/);});
 test('all three stages have identical library paths and declared stop time',()=>{const args=core.buildStageArgs({sources:['/p/a.vhd'],top:'tb',standard:'1993',stopTime:'2ms',libraryPaths:['/lib with spaces']},'/p/.nvc-build','/p/.nvc-build/new.fst');for(const stage of args){assert.deepEqual(stage.args.slice(0,4),['--std=1993','--work=work:/p/.nvc-build/work','-L','/lib with spaces']);}assert.ok(args[2].args.includes('--stop-time=2ms'));});
+test('runtime assertion failure maps process frame to source Problems',()=>{
+  const diagnostics=core.parseDiagnostics('** Failure: 1ns+0: SPEC_RUNTIME_FAILURE\n   Process :tb_fail:_p0 at /project/tb_fail.vhd:1','/project');
+  assert.deepEqual(diagnostics,[{filePath:'/project/tb_fail.vhd',line:0,column:0,severity:'error',message:'1ns+0: SPEC_RUNTIME_FAILURE'}]);
+});
+test('runtime Error and Warning procedure frames extract only source paths',()=>{
+  const diagnostics=core.parseDiagnostics('** Error: 2ns+0: assertion error\n   Process :tb:_p0 at /project/path with spaces/tb.vhd:12\n** Warning: 3ns+0: warning message\n   Procedure :work.pkg.check at /project/pkg.vhdl:5:3','/project');
+  assert.deepEqual(diagnostics,[{filePath:'/project/path with spaces/tb.vhd',line:11,column:0,severity:'error',message:'2ns+0: assertion error'},{filePath:'/project/pkg.vhdl',line:4,column:2,severity:'warning',message:'3ns+0: warning message'}]);
+});
+test('runtime warning with successful child exit does not stop simulation',async t=>{
+  const root=await fixture(t);const options=await simulator(root);const script=options.executableArgs[0];const original=await fs.readFile(script,'utf8');await fs.writeFile(script,original+"\nif(stage === '-r') console.warn('** Warning: 1ns+0: expected warning\\n   Process :tb_counter:_p0 at '+process.cwd()+'/tb.vhdl:4');\n");
+  const result=await core.runSimulation(options);assert.equal(await fs.readFile(result.wavePath,'utf8'),'fresh-wave');const diagnostics=core.parseDiagnostics(result.output,root);assert.equal(diagnostics.length,1);assert.equal(diagnostics[0].severity,'warning');assert.equal(diagnostics[0].filePath,path.join(root,'tb.vhdl'));assert.equal(diagnostics[0].line,3);
+});

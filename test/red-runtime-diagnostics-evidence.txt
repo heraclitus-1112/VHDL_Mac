@@ -1,0 +1,122 @@
+✔ validate ordered config and defaults without mutating input (1.827875ms)
+✔ reject invalid config and injection-like values (0.231083ms)
+✔ resolve real source and library dirs in project with spaces (4.280042ms)
+✔ reject missing sources, source symlink escape, and build symlink (2.334375ms)
+✔ discover VHDL files ignoring generated directories and symlink escapes (2.645ms)
+✔ run stages in order with consistent context, fresh unique waves and preserve other files (131.704708ms)
+✔ analysis failure stops later stages and cannot return previous waveform (88.391375ms)
+✔ missing new waveform rejects even if an unrelated old waveform exists (67.184375ms)
+✔ cancellation terminates the running child and stops further stages (21.957375ms)
+✔ parse inline and separated NVC diagnostic messages with paths containing spaces (0.373ms)
+✔ explicit executable override wins and missing executable gives actionable error (1.098542ms)
+✔ parse actual NVC 1.23 arrow location without column (0.104333ms)
+✔ reject source alias into dedicated build directory (1.160125ms)
+✔ all three stages have identical library paths and declared stop time (0.084167ms)
+✖ runtime assertion failure maps process frame to source Problems (0.569875ms)
+✖ runtime Error and Warning procedure frames extract only source paths (0.151959ms)
+✖ runtime warning with successful child exit does not stop simulation (67.130583ms)
+✔ untrusted run stops before saving dirty documents (3.756541ms)
+✔ run lock is acquired before saving and only saves selected project files (1.621125ms)
+✔ configuration wizard cancellation leaves project unchanged (1.534125ms)
+✔ configuration wizard records explicit order and confirmed fields (3.019ms)
+✔ config symlink cannot overwrite VHDL source (1.462875ms)
+✔ dirty file symlink outside workspace is never saved (1.661291ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 20
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 438.099625
+
+✖ failing tests:
+
+test at test/core.test.js:84:1
+✖ runtime assertion failure maps process frame to source Problems (0.569875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   {
+  -     column: 0,
+  -     filePath: '/project/tb_fail.vhd',
+  -     line: 0,
+  -     message: '1ns+0: SPEC_RUNTIME_FAILURE',
+  -     severity: 'error'
+  -   }
+  - ]
+  
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/core.test.js:86:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ { filePath: '/project/tb_fail.vhd', line: 0, column: 0, severity: 'error', message: '1ns+0: SPEC_RUNTIME_FAILURE' } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/core.test.js:88:1
+✖ runtime Error and Warning procedure frames extract only source paths (0.151959ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      {
+        column: 0,
+  +     filePath: '/project/Process :tb:_p0 at /project/path with spaces/tb.vhd',
+  -     filePath: '/project/path with spaces/tb.vhd',
+        line: 11,
+        message: '2ns+0: assertion error',
+        severity: 'error'
+      },
+      {
+        column: 2,
+  +     filePath: '/project/Procedure :work.pkg.check at /project/pkg.vhdl',
+  -     filePath: '/project/pkg.vhdl',
+        line: 4,
+        message: '3ns+0: warning message',
+        severity: 'warning'
+      }
+    ]
+  
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/core.test.js:90:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ { filePath: '/project/Process :tb:_p0 at /project/path with spaces/tb.vhd', line: 11, column: 0, severity: 'error', message: '2ns+0: assertion error' }, { filePath: '/project/Procedure :work.pkg.check at /project/pkg.vhdl', line: 4, column: 2, severity: 'warning', message: '3ns+0: warning message' } ],
+    expected: [ { filePath: '/project/path with spaces/tb.vhd', line: 11, column: 0, severity: 'error', message: '2ns+0: assertion error' }, { filePath: '/project/pkg.vhdl', line: 4, column: 2, severity: 'warning', message: '3ns+0: warning message' } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/core.test.js:92:1
+✖ runtime warning with successful child exit does not stop simulation (67.130583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '/private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/Process :tb_counter:_p0 at /private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/tb.vhdl'
+  - '/private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/tb.vhdl'
+  
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/core.test.js:94:269)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '/private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/Process :tb_counter:_p0 at /private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/tb.vhdl',
+    expected: '/private/var/folders/vs/ht8_7f5x3jj5jmww_5vpkr2h0000gn/T/nvc project spaces 08RM6A/tb.vhdl',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

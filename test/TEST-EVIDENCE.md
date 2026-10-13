@@ -15,3 +15,6 @@
 6. 最终 `node --test test/*.test.js`：20/20 通过（`green-evidence.txt`）。参数构造的既有库路径行为另加断言通过，其实现已由阶段顺序和参数测试先行覆盖。
 
 自审：确认 manifest 版本、官方 Surfer 依赖与 exact viewType；core 没有 shell，输出只有本次独立 FST；构建与配置均拒绝符号链接危险路径；run 的项目锁在保存前同步占用，最终 Promise 等待打开命令。真实 UI 验收由父任务负责。
+
+7. 规格审查提供实际 NVC assertion 输出，新增 `** Failure` 和 `Process/Procedure ... at file:line` 回归 fixture，另使用真实 Node 子进程验证 Warning 不阻止成功返回波形。修复前 3 项失败（`red-runtime-diagnostics-evidence.txt`）：Failure 未识别，调用帧前缀污染路径。
+8. 将 Failure 归类为 error，提取运行时调用帧后的真实路径。最终 `node --test test/*.test.js`：23/23 通过（`green-evidence.txt`）；`node --check src/core.js` 与 `git diff --check` 通过。

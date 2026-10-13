@@ -126,9 +126,11 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
 function parseDiagnostics(output, projectDir) {
   const results = []; let pending;
   for (const raw of output.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
-    const message = raw.match(/^\s*\*\*\s*(Error|Fatal|Warning):\s*(.+)$/i);
+    const message = raw.match(/^\s*\*\*\s*(Error|Fatal|Failure|Warning):\s*(.+)$/i);
     if (message) { pending = { severity: message[1].toLowerCase() === 'warning' ? 'warning' : 'error', message: message[2] }; continue; }
-    const location = raw.match(/^\s*(?:(?:-->|>)\s*)?(.+?\.vhdl?):(\d+)(?::(\d+))?(?::\s*(?:(error|warning|fatal):\s*)?(.*))?\s*$/i);
+    // Runtime diagnostics prefix their source location with a process/procedure frame.
+    const locationText = raw.replace(/^\s*(?:Process|Procedure)\s+.+?\s+at\s+/i, '');
+    const location = locationText.match(/^\s*(?:(?:-->|>)\s*)?(.+?\.vhdl?):(\d+)(?::(\d+))?(?::\s*(?:(error|warning|fatal|failure):\s*)?(.*))?\s*$/i);
     if (!location) continue;
     const [, file, line, column, severity, inline] = location;
     const detail = inline?.trim() ? { message: inline.trim(), severity: severity?.toLowerCase() === 'warning' ? 'warning' : 'error' } : pending;
