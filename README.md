@@ -11,7 +11,7 @@ brew install nvc
 git clone https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.2.2.vsix
+code --install-extension packages/nvc-runner-0.3.0.vsix
 code examples/counter
 ```
 
@@ -71,7 +71,7 @@ code examples/counter
 
 ## 运行与波形
 
-0.2.2 起默认使用独立的 VS Code 编辑器窗口显示波形，代码留在原窗口。VS Code 设置中的 **NVC Runner: Waveform Window** 可选择 `newWindow`（独立窗口，默认）或 `beside`（并排）。每次成功运行打开本次波形窗口；关闭不需要的旧窗口即可。旧版 VS Code 若缺少窗口命令则回退到并排并在输出中说明。
+0.2.2 起默认使用独立的 VS Code 编辑器窗口显示波形，代码留在原窗口。VS Code 设置中的 **NVC Runner: Waveform Window** 可选择 `newWindow`（独立窗口，默认）或 `beside`（并排）。0.3.0 起，同一项目复用一个固定波形窗口；重跑保留已选信号、顺序、格式、游标和视图，关闭后重新打开也会恢复。可用 `nvcRunner.preserveWaveformLayout` 关闭恢复；Surfer 版本变化时自动重置布局。旧版 VS Code 若缺少窗口命令则回退到并排并在输出中说明。
 
 各阶段以参数数组直接启动可执行文件，不调用 shell：
 
@@ -81,13 +81,40 @@ nvc --std=2008 --work=work:<project>/.nvc-build/work -e tb_counter
 nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --stop-time=1us --wave=<unique.fst>
 ```
 
-库目录通过各阶段共有的 `-L <directory>` 传入。任一阶段失败后停止；所有阶段成功且本次新 FST 存在、非空时，才打开 `surfer.waveformViewer`。每次使用独立 FST 文件名，保证旧编辑器不会冒充本次结果。
+库目录通过各阶段共有的 `-L <directory>` 传入。任一阶段失败后停止；所有阶段成功且本次新 FST 存在、非空时，才更新 `nvcRunner.waveformViewer`，使用已安装的官方 Surfer 渲染资源。每次使用独立 FST 文件名，保证旧编辑器不会冒充本次结果。
 
-构建文件只放在 `.nvc-build`；该目录及其 `work` 子目录不能是符号链接。扩展只删除 `.nvc-runner.json` 中记录的上一次自有波形，保留其他文件。先前波形标签页在文件删除后可能仍显示缓存内容，请以最后一次打开的独立文件名和“NVC 仿真”输出为准。
+构建文件只放在 `.nvc-build`；该目录及其 `work` 子目录不能是符号链接。扩展只删除 `.nvc-runner.json` 中记录的上一次自有波形，保留其他文件。失败时保留上次已显示的波形；该波形代表上次成功结果，请查看“NVC 仿真”输出中的本次状态。
 
 所有 NVC 输出进入 **NVC 仿真** 输出通道；可解析的源文件行列错误和警告进入 **问题** 面板。找不到配置时运行配置命令；找不到 NVC 时设置 `nvcRunner.nvcPath` 为完整可执行文件路径。留空会查找 `PATH`、`/opt/homebrew/bin/nvc` 和 `/usr/local/bin/nvc`。需要先信任工作区。
 
 本扩展可生成受支持接口的输入激励测试平台，并运行已有测试平台，不综合、不烧录 FPGA。基础 `vhdl` 语言识别用于按钮入口；语法高亮和语言服务可以另装扩展。
+
+## 交互仿真（0.3.0）
+
+普通 ▶ 执行完整 testbench。需要分段推进、暂停和临时改输入时，运行 **NVC: 启动交互仿真**。首次编译后自动运行初始 100ns（若提前 finish，则停在实际结束时间），在同一个波形窗口上方显示交互按钮：
+
+| 按钮 | 操作 |
+|---|---|
+| 运行一段 | 输入 `100ns` 等时长，保留仿真内部状态并继续推进 |
+| 继续 / 暂停 | 按指定时长连续分段运行，暂停在当前段结束后生效 |
+| 强制输入 | 选择层级信号并填入 NVC 值，例如 `'0'`、`'1'` 或 `"0101"` |
+| 解除强制 | 解除所选信号的覆盖，让原来的驱动重新控制它 |
+| 读信号 | 读取暂停时的实际值 |
+| 结束会话 | 结束持续进程；修改代码后重新编译需要先结束会话 |
+
+强制/解除后再运行一段以观察响应。工具栏显示实际仿真时间，而不是简单累计输入时长；时长小于下一事件时实际时间可能不变，连续模式会自动暂停并提示加长运行段。testbench 调用 `finish` / `stop` 后不能继续，需结束并重启会话。每段波形是同一持续进程的原生累计数据。只在段末刷新，不提供语句断点或单步源代码调试。
+
+交互模式需要带 Tcl 的 NVC 和本仓库的**实验原生波形补丁**；普通 Homebrew NVC 保持用于批仿真。Apple Silicon Mac 可执行：
+
+```sh
+bash tools/build-nvc-interactive.sh --install-deps
+```
+
+脚本使用固定校验和的官方 NVC 1.23.0 源码，安装到 `~/.local/share/vhdl-mac/nvc-interactive-livewave`，保留对应 GPL 源码与构建记录，不替换 Homebrew NVC。补丁与构建脚本为 GPL-3.0-or-later；它不是 NVC 官方发行版。其他安装位置可在 `nvcRunner.interactiveNvcPath` 设置。
+
+在 `vhdl.sim.json` 加入 `"dumpArrays": 1024`，普通批仿真就会把最多含 1024 个元素的嵌套数组加入波形。0 表示关闭；当前交互快照不支持该数组选项。
+
+布局按项目保存于本地 VS Code 工作区状态，不上传。Surfer 内部状态接口可能随版本变化；当前已验证官方 Surfer 0.7.1001488。安装包不捆绑 Surfer 资源。
 
 ## 开发与验证
 

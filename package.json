@@ -1,40 +1,179 @@
 {
   "name": "nvc-runner",
   "displayName": "NVC Runner · VHDL 仿真",
-  "description": "按项目配置运行 NVC 仿真，并使用官方 Surfer 查看本次 FST 波形。",
-  "version": "0.2.2",
+  "description": "一键 NVC 仿真、输入激励生成、持久 Surfer 波形窗口与交互会话。",
+  "version": "0.3.0",
   "publisher": "local-vhdl",
-  "repository": { "type": "git", "url": "https://github.com/heraclitus-1112/VHDL_Mac.git" },
-  "license": "MIT",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Programming Languages", "Other"],
-  "main": "./src/extension.js",
-  "activationEvents": ["onLanguage:vhdl"],
-  "extensionDependencies": ["surfer-project.surfer"],
-  "capabilities": {
-    "untrustedWorkspaces": { "supported": false, "description": "NVC 需要保存项目文件并执行本机进程，请先信任工作区。" },
-    "virtualWorkspaces": { "supported": false, "description": "NVC 需要本地文件路径。" }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heraclitus-1112/VHDL_Mac.git"
   },
-  "scripts": { "test": "node --test test/*.test.js" },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:vhdl"
+  ],
+  "extensionDependencies": [
+    "surfer-project.surfer"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "NVC 需要保存项目文件并执行本机进程，请先信任工作区。"
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "NVC 需要本地文件路径。"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "contributes": {
-    "languages": [{ "id": "vhdl", "aliases": ["VHDL", "vhdl"], "extensions": [".vhd", ".vhdl"] }],
+    "languages": [
+      {
+        "id": "vhdl",
+        "aliases": [
+          "VHDL",
+          "vhdl"
+        ],
+        "extensions": [
+          ".vhd",
+          ".vhdl"
+        ]
+      }
+    ],
     "commands": [
-      { "command": "nvcRunner.configure", "title": "NVC: 配置 VHDL 仿真", "icon": "$(gear)" },
-      { "command": "nvcRunner.run", "title": "NVC: 运行 VHDL 仿真", "icon": "$(play)" },
-      { "command": "nvcRunner.cancel", "title": "NVC: 取消 VHDL 仿真", "icon": "$(debug-stop)" },
-      { "command": "nvcRunner.generateTestbench", "title": "NVC: 生成 Testbench", "icon": "$(new-file)" }
+      {
+        "command": "nvcRunner.configure",
+        "title": "NVC: 配置 VHDL 仿真",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "nvcRunner.run",
+        "title": "NVC: 运行 VHDL 仿真",
+        "icon": "$(play)"
+      },
+      {
+        "command": "nvcRunner.cancel",
+        "title": "NVC: 取消 VHDL 仿真",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "nvcRunner.generateTestbench",
+        "title": "NVC: 生成 Testbench",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "nvcRunner.startInteractive",
+        "title": "NVC: 启动交互仿真"
+      },
+      {
+        "command": "nvcRunner.stepInteractive",
+        "title": "NVC: 交互仿真运行一段"
+      },
+      {
+        "command": "nvcRunner.continueInteractive",
+        "title": "NVC: 继续交互仿真"
+      },
+      {
+        "command": "nvcRunner.pauseInteractive",
+        "title": "NVC: 暂停交互仿真"
+      },
+      {
+        "command": "nvcRunner.forceSignal",
+        "title": "NVC: 强制交互信号"
+      },
+      {
+        "command": "nvcRunner.releaseSignal",
+        "title": "NVC: 解除信号强制"
+      },
+      {
+        "command": "nvcRunner.examineSignal",
+        "title": "NVC: 读取交互信号"
+      },
+      {
+        "command": "nvcRunner.stopInteractive",
+        "title": "NVC: 结束交互仿真"
+      }
     ],
     "menus": {
-      "editor/title": [{ "command": "nvcRunner.run", "when": "resourceExtname == .vhd || resourceExtname == .vhdl", "group": "navigation" }],
-      "explorer/context": [{ "command": "nvcRunner.generateTestbench", "when": "resourceExtname == .vhd || resourceExtname == .vhdl", "group": "navigation" }]
+      "editor/title": [
+        {
+          "command": "nvcRunner.run",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "nvcRunner.generateTestbench",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "navigation"
+        }
+      ]
     },
     "configuration": {
       "title": "NVC Runner",
       "properties": {
-        "nvcRunner.nvcPath": { "type": "string", "default": "", "scope": "machine-overridable", "description": "NVC 可执行文件完整路径。留空时从 PATH、/opt/homebrew/bin/nvc、/usr/local/bin/nvc 查找。", "restricted": true },
-        "nvcRunner.waveformWindow": { "type": "string", "enum": ["newWindow", "beside"], "enumDescriptions": ["在独立的 VS Code 编辑器窗口显示 Surfer 波形。", "在原窗口中并排显示代码和波形。"], "default": "newWindow", "description": "仿真成功后波形的默认显示位置。" }
+        "nvcRunner.nvcPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "NVC 可执行文件完整路径。留空时从 PATH、/opt/homebrew/bin/nvc、/usr/local/bin/nvc 查找。",
+          "restricted": true
+        },
+        "nvcRunner.waveformWindow": {
+          "type": "string",
+          "enum": [
+            "newWindow",
+            "beside"
+          ],
+          "enumDescriptions": [
+            "在独立的 VS Code 编辑器窗口显示 Surfer 波形。",
+            "在原窗口中并排显示代码和波形。"
+          ],
+          "default": "newWindow",
+          "description": "仿真成功后波形的默认显示位置。"
+        },
+        "nvcRunner.preserveWaveformLayout": {
+          "type": "boolean",
+          "default": true,
+          "description": "重跑时保留同一项目的已选信号、顺序、格式和视图；关闭后也保存布局。Surfer 版本变化时重置。"
+        },
+        "nvcRunner.interactiveNvcPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "restricted": true,
+          "description": "带 Tcl 与原生波形快照补丁的 NVC。默认查找 ~/.local/share/vhdl-mac/nvc-interactive-livewave/bin/nvc。普通 Homebrew NVC 继续用于一键批仿真。"
+        }
       }
     },
-    "jsonValidation": [{ "fileMatch": "vhdl.sim.json", "url": "./schemas/config.schema.json" }]
+    "jsonValidation": [
+      {
+        "fileMatch": "vhdl.sim.json",
+        "url": "./schemas/config.schema.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "nvcRunner.waveformViewer",
+        "displayName": "NVC 项目波形",
+        "selector": [
+          {
+            "filenamePattern": "*.nvcwave"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
   }
 }

@@ -4,11 +4,16 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const core = require('./core');
 const generator = require('./generate');
-const { openWaveform } = require('./waveform');
+const { SurferViewer } = require('./viewer');
+const { InteractiveSession, durationParts } = require('./interactive');
+const os = require('node:os');
 let activeInstance;
 function createExtension(vscode, context) {
   const locks = new Map();
+  const sessions = new Map();
   const output = vscode.window.createOutputChannel('NVC 仿真');
+  const viewer = new SurferViewer(vscode, context, message => output.appendLine(message));
+  context.subscriptions.push(viewer);
   const diagnostics = vscode.languages.createDiagnosticCollection('nvc');
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 20);
   status.text = '$(play) NVC 仿真'; status.tooltip = '运行当前项目 VHDL 测试平台'; status.command = 'nvcRunner.run'; status.show();
@@ -33,6 +38,7 @@ function createExtension(vscode, context) {
       checkTrust();
       // Map reservation occurs synchronously before the first save/configuration await.
       if (locks.has(root)) throw new Error('这个项目正在运行或配置，请等待完成，或取消当前仿真。');
+      if (sessions.has(root)) throw new Error('这个项目已有交互仿真会话，请先运行“NVC: 结束交互仿真”再重新编译。');
       const entry = { controller: new AbortController(), running };
       locks.set(root, entry);
       try { return await action(folder, root, entry.controller); }
@@ -138,7 +144,7 @@ function createExtension(vscode, context) {
           await surfer.activate();
           if (controller.signal.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; }
           const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
-          await openWaveform(vscode, vscode.Uri.file(result.wavePath), windowMode, message => output.appendLine(message));
+          await viewer.show(result, windowMode, vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('preserveWaveformLayout', true));
           output.appendLine(`\n本次波形：${result.wavePath}`);
           return result;
         } catch (error) { if (error.output !== undefined) updateDiagnostics(error.output, root); throw error; }
@@ -165,8 +171,76 @@ function createExtension(vscode, context) {
     }
     return generated;
   }
+  function sessionState(root) {
+    const session = sessions.get(root);
+    if (!session) return viewer.setSession(root, undefined);
+    const now = BigInt(session.now), ns = now / 1000000n, fraction = (now % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
+    const running = session.busy || session.continuing;
+    return viewer.setSession(root, { nowText: `${ns}${fraction ? `.${fraction}` : ''} ns`, running, state: session.finished ? '测试平台已结束' : running ? '运行中（段末暂停）' : '已暂停' });
+  }
+  async function startInteractive(uri) {
+    return withProject(uri, true, async (folder, root, controller) => {
+      const filename = await configPath(root); await saveProjectDocuments(folder, root);
+      const config = core.validateConfig(JSON.parse(await fs.readFile(filename, 'utf8')));
+      const settings = vscode.workspace.getConfiguration('nvcRunner', folder.uri);
+      const executable = await core.resolveNvc(settings.get('interactiveNvcPath', '') || path.join(os.homedir(), '.local/share/vhdl-mac/nvc-interactive-livewave/bin/nvc'));
+      output.show(true); output.appendLine(`\n启动交互仿真：${root}\nNVC：${executable}`);
+      let session, sessionOutput = '';
+      session = await InteractiveSession.start({ executable, projectDir: root, config, signal: controller.signal,
+        onOutput: text => { output.append(text); sessionOutput = (sessionOutput + text).slice(-1048576); updateDiagnostics(sessionOutput, root); },
+        onTime: () => sessionState(root),
+        onWave: async result => { await viewer.show(result, settings.get('waveformWindow', 'newWindow'), settings.get('preserveWaveformLayout', true)); await viewer.waitLoaded(root); },
+        onExit: () => { if (sessions.get(root) === session) { sessions.delete(root); sessionState(root); } }
+      });
+      if (!session.waveSupported) { session.close(); throw new Error('当前交互 NVC 缺少原生波形快照支持。请按 tools/build-nvc-interactive.sh 安装交互版本，或使用普通仿真。'); }
+      if (config.dumpArrays) output.appendLine('dumpArrays 当前只应用于普通批仿真，交互会话暂不支持嵌套数组波形。');
+      sessions.set(root, session); await sessionState(root);
+      try { await session.run('100ns'); await sessionState(root); }
+      catch (error) { session.close(); sessions.delete(root); await sessionState(root); throw error; }
+      output.appendLine('交互会话已启动。波形窗口上方可运行一段、继续、暂停、强制/解除输入。');
+      return session;
+    });
+  }
+  async function controlInteractive(root, action) {
+    try {
+      checkTrust();
+      const session = sessions.get(root); if (!session) throw new Error('请先运行“NVC: 启动交互仿真”。');
+      if (action === 'pause') { session.pause(); output.appendLine('已请求暂停，将在当前运行段结束后生效。'); return; }
+      if (action === 'stop') { session.close(); sessions.delete(root); await sessionState(root); output.appendLine('交互会话已结束。'); return; }
+      if (action === 'step' || action === 'continue') {
+        session.checkIdle();
+        const duration = await vscode.window.showInputBox({ title: action === 'step' ? '推进仿真时间' : '连续运行：每段时长', value: '100ns', prompt: '正整数加单位，例如 100ns。连续运行可在段末暂停。', ignoreFocusOut: true, validateInput: value => { try { durationParts(value); } catch (error) { return error.message; } } });
+        if (duration === undefined) return;
+        const running = action === 'step' ? session.run(duration) : session.continue(duration);
+        await sessionState(root);
+        try {
+          const result = await running;
+          if (result?.idle) {
+            const message = session.pendingEvents ? `运行段小于下一事件间隔，已暂停。下个事件在 ${session.nextTime} fs，请选择更长的运行时长。` : '当前没有新的定时事件，已暂停。可强制输入后再运行。';
+            output.appendLine(message); await vscode.window.showInformationMessage(message);
+          }
+        } finally { await sessionState(root); }
+        return;
+      }
+      session.checkIdle();
+      const signals = await session.signals();
+      const signal = await vscode.window.showQuickPick(signals, { title: { force: '选择要强制的信号', release: '选择要解除强制的信号', inspect: '选择要读取的信号' }[action], ignoreFocusOut: true });
+      if (!signal) return;
+      if (action === 'force') {
+        const description = await session.describe(signal), current = await session.examine(signal);
+        const value = await vscode.window.showInputBox({ title: `强制 ${signal} (${description.type})`, value: current, prompt: "逻辑值：'0'、'1'；向量：\"0101\"。强制持续到解除或结束会话。", ignoreFocusOut: true });
+        if (value === undefined) return;
+        await session.force(signal, value); output.appendLine(`强制 ${signal} = ${value}；再运行一段以观察电路响应。`);
+      } else if (action === 'release') { await session.release(signal); output.appendLine(`已解除 ${signal} 的强制；再运行一段观察响应。`); }
+      else { const value = await session.examine(signal); output.appendLine(`${signal} = ${value}（${session.now} fs）`); await vscode.window.showInformationMessage(`${signal} = ${value}`); }
+    } catch (error) { output.appendLine(error.message); await vscode.window.showErrorMessage(error.message); }
+  }
+  viewer.onControl = controlInteractive;
+  async function controlFromCommand(uri, action) { const folder = await selectFolder(uri); if (folder) await controlInteractive(await fs.realpath(folder.uri.fsPath), action); }
   context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
-  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); }, run, configure, cancel, generate };
+  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.startInteractive', startInteractive));
+  for (const [command, action] of Object.entries({ stepInteractive: 'step', continueInteractive: 'continue', pauseInteractive: 'pause', forceSignal: 'force', releaseSignal: 'release', examineSignal: 'inspect', stopInteractive: 'stop' })) context.subscriptions.push(vscode.commands.registerCommand(`nvcRunner.${command}`, uri => controlFromCommand(uri, action)));
+  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, configure, cancel, generate, startInteractive, controlInteractive };
 }
 function activate(context) { activeInstance = createExtension(require('vscode'), context); context.subscriptions.push(activeInstance); }
 function deactivate() { activeInstance?.dispose(); activeInstance = undefined; }

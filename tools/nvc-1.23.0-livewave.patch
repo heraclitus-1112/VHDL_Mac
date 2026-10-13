@@ -1,0 +1,236 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Experimental local NVC 1.23.0 native livewave and simstatus additions.
+# Upstream source: https://github.com/nickg/nvc/releases/tag/r1.23.0
+--- a/src/rt/model.h
++++ b/src/rt/model.h
+@@ -48,6 +48,8 @@
+ int64_t model_now(rt_model_t *m, unsigned *deltas);
+ int64_t model_next_time(rt_model_t *m);
+ void model_stop(rt_model_t *m);
++bool model_stopped(rt_model_t *m);
++bool model_has_pending_events(rt_model_t *m);
+ void model_interrupt(rt_model_t *m);
+ int model_exit_status(rt_model_t *m);
+ 
+--- a/src/rt/model.c
++++ b/src/rt/model.c
+@@ -3616,6 +3616,16 @@
+       return TIME_HIGH;
+    else
+       return heap_min_key(m->eventq_heap);
++}
++
++bool model_stopped(rt_model_t *m)
++{
++   return m->force_stop;
++}
++
++bool model_has_pending_events(rt_model_t *m)
++{
++   return m->next_is_delta || heap_size(m->eventq_heap) > 0;
+ }
+ 
+ void model_stop(rt_model_t *m)
+--- a/src/rt/wave.h
++++ b/src/rt/wave.h
+@@ -28,6 +28,8 @@
+ wave_dumper_t *wave_dumper_new(const char *file, const char *gtkw_file,
+                                tree_t top, wave_format_t format);
+ void wave_dumper_free(wave_dumper_t *wd);
++void wave_dumper_set_live(wave_dumper_t *wd);
++bool wave_dumper_flush(wave_dumper_t *wd);
+ void wave_dumper_restart(wave_dumper_t *wd, rt_model_t *m, jit_t *jit);
+ 
+ void wave_include_glob(const char *glob);
+--- a/src/rt/wave.c
++++ b/src/rt/wave.c
+@@ -118,6 +118,8 @@
+    hash_t        *typecache;
+    fst_type_t    *datatypes[DT_STRING + 1];
+    data_array_t   dumped;
++   bool           live;
++   bool           closing;
+ } wave_dumper_t;
+ 
+ static glob_array_t incl;
+@@ -145,14 +147,57 @@
+    return false;
+ }
+ 
++bool wave_dumper_flush(wave_dumper_t *wd)
++{
++   const uint64_t now = model_now(wd->model, NULL);
++   // A zero-time design needs two entries before FST accepts a flush.
++   fstWriterEmitTimeChange(wd->fst_ctx, now);
++   fstWriterEmitTimeChange(wd->fst_ctx, now);
++   fstWriterFlushContext(wd->fst_ctx);
++   fstWriterEmitTimeChange(wd->fst_ctx, now);
++
++   if (wd->vcdfile != NULL) {
++      void *reader = fstReaderOpen(wd->tmpfst);
++      if (reader == NULL)
++         return false;
++      rewind(wd->vcdfile);
++      if (ftruncate(fileno(wd->vcdfile), 0) != 0)
++         fatal_errno("truncate live VCD");
++      fstReaderSetVcdExtensions(reader, 1);
++      const bool ok = fstReaderProcessHier(reader, wd->vcdfile);
++      fstReaderSetFacProcessMaskAll(reader);
++      fstReaderIterBlocks(reader, NULL, NULL, wd->vcdfile);
++      if (now == 0)
++         fputs("$end\n", wd->vcdfile);
++      fstReaderClose(reader);
++      fflush(wd->vcdfile);
++      return ok;
++   }
++   return true;
++}
++
++void wave_dumper_set_live(wave_dumper_t *wd)
++{
++   wd->live = true;
++}
++
+ static void fst_close(rt_model_t *m, void *arg)
+ {
+    wave_dumper_t *wd = arg;
++   if (wd->live && !wd->closing) {
++      if (!wave_dumper_flush(wd))
++         warnf("live waveform snapshot could not be written");
++      model_set_phase_cb(m, END_OF_SIMULATION, fst_close, wd);
++      return;
++   }
+ 
+    fstWriterEmitTimeChange(wd->fst_ctx, model_now(m, NULL));
+    fstWriterClose(wd->fst_ctx);
+ 
+    if (wd->vcdfile) {
++      rewind(wd->vcdfile);
++      if (ftruncate(fileno(wd->vcdfile), 0) != 0)
++         fatal_errno("truncate VCD");
+       void *xc = fstReaderOpen(wd->tmpfst);
+       if (xc == NULL)
+          fatal("fstReaderOpen failed for temporary FST file");
+@@ -163,6 +208,8 @@
+ 
+       fstReaderSetFacProcessMaskAll(xc);
+       fstReaderIterBlocks(xc, NULL, NULL, wd->vcdfile);
++      if (wd->live && model_now(m, NULL) == 0)
++         fputs("$end\n", wd->vcdfile);
+ 
+       fstReaderClose(xc);
+       fclose(wd->vcdfile);
+@@ -1320,6 +1367,10 @@
+ 
+ void wave_dumper_free(wave_dumper_t *wd)
+ {
++   if (wd->live && wd->fst_ctx != NULL) {
++      wd->closing = true;
++      fst_close(wd->model, wd);
++   }
+    for (int i = 0; i < wd->dumped.count; i++)
+       free(wd->dumped.items[i]);
+    ACLEAR(wd->dumped);
+--- a/src/tcl/tcl-structs.h
++++ b/src/tcl/tcl-structs.h
+@@ -61,6 +61,7 @@
+    size_t           ncmds;
+    size_t           cmdalloc;
+    rt_model_t      *model;
++   wave_dumper_t   *wave;
+    tree_t           top;
+    rt_scope_t      *root;
+    shell_signal_t  *signals;
+--- a/src/tcl/tcl-shell.c
++++ b/src/tcl/tcl-shell.c
+@@ -22,6 +22,7 @@
+ #include "printf.h"
+ #include "rt/assert.h"
+ #include "rt/model.h"
++#include "rt/wave.h"
+ #include "rt/structs.h"
+ #include "tcl/tcl-priv.h"
+ #include "tcl/tcl-shell.h"
+@@ -182,6 +183,53 @@
+    }
+ 
+    return container_of(obj, shell_signal_t, obj);
++}
++
++static int shell_cmd_simstatus(ClientData cd, Tcl_Interp *interp,
++                               int objc, Tcl_Obj *const objv[])
++{
++   tcl_shell_t *sh = cd;
++   if (!shell_has_model(sh))
++      return TCL_ERROR;
++   if (objc != 1)
++      return tcl_error(sh, "usage: simstatus");
++   Tcl_Obj *result = Tcl_NewDictObj();
++   Tcl_DictObjPut(interp, result, Tcl_NewStringObj("stopped", -1),
++                  Tcl_NewBooleanObj(model_stopped(sh->model)));
++   Tcl_DictObjPut(interp, result, Tcl_NewStringObj("pending", -1),
++                  Tcl_NewBooleanObj(model_has_pending_events(sh->model)));
++   Tcl_DictObjPut(interp, result, Tcl_NewStringObj("exitStatus", -1),
++                  Tcl_NewIntObj(model_exit_status(sh->model)));
++   Tcl_DictObjPut(interp, result, Tcl_NewStringObj("nextTime", -1),
++                  Tcl_NewWideIntObj(model_next_time(sh->model)));
++   Tcl_SetObjResult(interp, result);
++   return TCL_OK;
++}
++
++static int shell_cmd_wave(ClientData cd, Tcl_Interp *interp,
++                          int objc, Tcl_Obj *const objv[])
++{
++   tcl_shell_t *sh = cd;
++   if (!shell_has_model(sh))
++      return TCL_ERROR;
++   if (objc != 2)
++      return tcl_error(sh, "usage: wave <VCD file> | wave -flush");
++   const char *file = Tcl_GetString(objv[1]);
++   if (strcmp(file, "-flush") == 0) {
++      if (sh->wave == NULL)
++         return tcl_error(sh, "waveform dumping is not enabled");
++      return wave_dumper_flush(sh->wave) ? TCL_OK
++         : tcl_error(sh, "waveform snapshot failed");
++   }
++   if (sh->wave != NULL)
++      return tcl_error(sh, "waveform dumping is already enabled");
++   if (model_now(sh->model, NULL) != 0)
++      return tcl_error(sh, "enable wave before the first run");
++   sh->wave = wave_dumper_new(file, NULL, sh->top, WAVE_FORMAT_VCD);
++   wave_dumper_set_live(sh->wave);
++   wave_dumper_restart(sh->wave, sh->model, sh->jit);
++   return wave_dumper_flush(sh->wave) ? TCL_OK
++      : tcl_error(sh, "initial waveform snapshot failed");
+ }
+ 
+ static const char restart_help[] =
+@@ -638,6 +686,10 @@
+    if (sh->handler.exit != NULL)
+       (*sh->handler.exit)(status, sh->handler.context);
+ 
++   if (sh->wave != NULL) {
++      wave_dumper_free(sh->wave);
++      sh->wave = NULL;
++   }
+    Tcl_Exit(status);
+ 
+  usage:
+@@ -901,6 +953,8 @@
+    shell_add_cmd(sh, "copyright", shell_cmd_copyright, copyright_help);
+    shell_add_cmd(sh, "find", shell_cmd_find, find_help);
+    shell_add_cmd(sh, "run", shell_cmd_run, run_help);
++   shell_add_cmd(sh, "simstatus", shell_cmd_simstatus, "Return stop, pending event, and exit status");
++   shell_add_cmd(sh, "wave", shell_cmd_wave, "Write native VCD and flush at each run boundary");
+    shell_add_cmd(sh, "restart", shell_cmd_restart, restart_help);
+    shell_add_cmd(sh, "examine", shell_cmd_examine, examine_help);
+    shell_add_cmd(sh, "exa", shell_cmd_examine, examine_help);
+@@ -918,6 +972,8 @@
+ 
+ void shell_free(tcl_shell_t *sh)
+ {
++   if (sh->wave != NULL)
++      wave_dumper_free(sh->wave);
+    hash_free(sh->namemap);
+    printer_free(sh->printer);
+    Tcl_DeleteInterp(sh->interp);

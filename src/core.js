@@ -9,7 +9,7 @@ const IGNORED = new Set(['.nvc-build', '.git', 'node_modules', 'build', 'dist', 
 function within(root, target) { const relative = path.relative(root, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); }
 function validateConfig(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('vhdl.sim.json 必须是 JSON 对象。');
-  const allowed = new Set(['sources', 'top', 'standard', 'stopTime', 'libraryPaths']);
+  const allowed = new Set(['sources', 'top', 'standard', 'stopTime', 'libraryPaths', 'dumpArrays']);
   for (const key of Object.keys(data)) if (!allowed.has(key)) throw new Error(`未知配置字段：${key}`);
   if (!Array.isArray(data.sources) || !data.sources.length) throw new Error('sources 必须包含按编译顺序排列的 VHDL 文件。');
   for (const source of data.sources) {
@@ -24,7 +24,8 @@ function validateConfig(data) {
   if (typeof stopTime !== 'string' || !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime)) throw new Error('stopTime 必须是正整数加单位 fs/ps/ns/us/ms/sec，例如 1us。');
   const libraryPaths = data.libraryPaths ?? [];
   if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths 必须是有效目录路径数组。');
-  return { sources: [...data.sources], top: data.top, standard, stopTime, libraryPaths: [...libraryPaths] };
+  if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays 必须是 0 到 1000000 的整数，0 表示关闭。');
+  return { sources: [...data.sources], top: data.top, standard, stopTime, libraryPaths: [...libraryPaths], ...(data.dumpArrays === undefined ? {} : { dumpArrays: data.dumpArrays }) };
 }
 async function safeDirectory(root, directory) {
   try {
@@ -71,7 +72,7 @@ function buildStageArgs(config, buildDir, wavePath) {
   return [
     { stage: 'analysis', args: [...common, '-a', ...config.sources] },
     { stage: 'elaboration', args: [...common, '-e', config.top] },
-    { stage: 'simulation', args: [...common, '-r', config.top, `--stop-time=${config.stopTime}`, `--wave=${wavePath}`] }
+    { stage: 'simulation', args: [...common, '-r', config.top, `--stop-time=${config.stopTime}`, `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
   ];
 }
 function abortError() { const error = new Error('仿真已取消。'); error.name = 'AbortError'; return error; }
@@ -105,12 +106,9 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   if (signal?.aborted) throw abortError();
   const resolved = await resolveProject(projectDir, config);
   await fs.mkdir(resolved.buildDir, { recursive: true });
-  await cleanOwnedWave(resolved.buildDir);
   const wavePath = path.join(resolved.buildDir, `nvc-runner-${randomUUID()}.fst`);
-  // Exclusive creation avoids following an existing marker symlink and owns only this waveform.
   const marker = path.join(resolved.buildDir, '.nvc-runner.json');
-  await fs.unlink(marker).catch(error => { if (error.code !== 'ENOENT') throw error; });
-  await fs.writeFile(marker, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' });
+  try { if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('构建记录不能是符号链接。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let output = '';
   for (const { stage, args } of buildStageArgs(resolved, resolved.buildDir, wavePath)) {
     if (signal?.aborted) throw abortError();
@@ -121,6 +119,10 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   if (signal?.aborted) throw abortError();
   let stat; try { stat = await fs.lstat(wavePath); } catch { throw new Error('NVC 未生成本次运行的新波形。请检查测试平台与 NVC 输出。'); }
   if (!stat.isFile() || stat.size === 0) throw new Error('本次波形为空或不是普通文件。请检查测试平台与 NVC 输出。');
+  // Keep the last successful result accessible when analysis or simulation fails.
+  await cleanOwnedWave(resolved.buildDir);
+  const temporary = path.join(resolved.buildDir, `.result-${randomUUID()}.tmp`);
+  try { await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
   return { wavePath, output, projectDir: resolved.projectDir };
 }
 function parseDiagnostics(output, projectDir) {

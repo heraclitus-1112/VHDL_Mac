@@ -57,10 +57,10 @@ test('run stages in order with consistent context, fresh unique waves and preser
   for(const args of calls){assert.ok(args.includes('--std=2008'));assert.ok(args.some(a=>a.startsWith('--work=work:')));}
   assert.ok(calls[0].includes(path.join(root,config.sources[0]))); assert.ok(output.join('').includes('stage -r'));
 });
-test('analysis failure stops later stages and cannot return previous waveform', async t => {
+test('analysis failure stops later stages, rejects this run and preserves last successful waveform', async t => {
   const root = await fixture(t); const ok=await simulator(root); assert.equal(typeof core.runSimulation,'function'); const prior=await core.runSimulation(ok); const failed=await simulator(root,'fail');
   await assert.rejects(core.runSimulation(failed),error=>error.stage==='analysis'&&error.output.includes('syntax error'));
-  const calls=(await fs.readFile(path.join(root,'calls.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(calls.length,4);await assert.rejects(fs.stat(prior.wavePath));
+  const calls=(await fs.readFile(path.join(root,'calls.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(calls.length,4);assert.equal(await fs.readFile(prior.wavePath,'utf8'),'fresh-wave');
 });
 test('missing new waveform rejects even if an unrelated old waveform exists',async t=>{
   const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','old.fst'),'old');const opts=await simulator(root,'missing');assert.equal(typeof core.runSimulation,'function');await assert.rejects(core.runSimulation(opts),/波形|wave/);
@@ -92,4 +92,12 @@ test('runtime Error and Warning procedure frames extract only source paths',()=>
 test('runtime warning with successful child exit does not stop simulation',async t=>{
   const root=await fixture(t);const options=await simulator(root);const script=options.executableArgs[0];const original=await fs.readFile(script,'utf8');await fs.writeFile(script,original+"\nif(stage === '-r') console.warn('** Warning: 1ns+0: expected warning\\n   Process :tb_counter:_p0 at '+process.cwd()+'/tb.vhdl:4');\n");
   const result=await core.runSimulation(options);assert.equal(await fs.readFile(result.wavePath,'utf8'),'fresh-wave');const diagnostics=core.parseDiagnostics(result.output,root);assert.equal(diagnostics.length,1);assert.equal(diagnostics[0].severity,'warning');assert.equal(diagnostics[0].filePath,path.join(root,'tb.vhdl'));assert.equal(diagnostics[0].line,3);
+});
+
+test('array dumping is validated and included only in the simulation command',()=>{
+  const c=core.validateConfig({...config,dumpArrays:1024});
+  const args=core.buildStageArgs(c,'/tmp/build','/tmp/build/current.fst');
+  assert.ok(args[2].args.includes('--dump-arrays=1024'));
+  assert.ok(args.slice(0,2).every(stage=>!stage.args.some(arg=>arg.startsWith('--dump-arrays'))));
+  for(const value of [-1,1.5,1000001,'1024'])assert.throws(()=>core.validateConfig({...config,dumpArrays:value}));
 });
