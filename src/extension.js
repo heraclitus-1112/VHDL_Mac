@@ -75,7 +75,7 @@ function createExtension(vscode, context) {
   }
   const diagnosticFiles = new Map();
   async function configure(uri) {
-    return withProject(uri, false, async (_, root) => {
+    const saved = await withProject(uri, false, async (_, root) => {
       const filename = await configPath(root);
       const sources = await core.discoverSources(root);
       if (!sources.length) throw new Error('工作区没有 .vhd/.vhdl 源文件。请先创建设计和测试平台。');
@@ -105,8 +105,9 @@ function createExtension(vscode, context) {
       try { await fs.writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx' }); await fs.rename(temporary, filename); }
       finally { await fs.unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
       output.appendLine(`已保存配置：${filename}`);
-      await vscode.window.showInformationMessage('VHDL 仿真配置已保存，点击播放按钮即可运行。');
+      return true;
     });
+    if (saved) await vscode.window.showInformationMessage('VHDL 仿真配置已保存，点击播放按钮即可运行。');
   }
   async function run(uri) {
     return withProject(uri, true, async (folder, root, controller) => {
