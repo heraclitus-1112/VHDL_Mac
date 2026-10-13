@@ -1,0 +1,32 @@
+{
+  "name": "nvc-runner",
+  "displayName": "NVC Runner · VHDL 仿真",
+  "description": "按项目配置运行 NVC 仿真，并使用官方 Surfer 查看本次 FST 波形。",
+  "version": "0.1.0",
+  "publisher": "local-vhdl",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages", "Other"],
+  "main": "./src/extension.js",
+  "activationEvents": ["onLanguage:vhdl"],
+  "extensionDependencies": ["surfer-project.surfer"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": false, "description": "NVC 需要保存项目文件并执行本机进程，请先信任工作区。" },
+    "virtualWorkspaces": { "supported": false, "description": "NVC 需要本地文件路径。" }
+  },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "contributes": {
+    "languages": [{ "id": "vhdl", "aliases": ["VHDL", "vhdl"], "extensions": [".vhd", ".vhdl"] }],
+    "commands": [
+      { "command": "nvcRunner.configure", "title": "NVC: 配置 VHDL 仿真", "icon": "$(gear)" },
+      { "command": "nvcRunner.run", "title": "NVC: 运行 VHDL 仿真", "icon": "$(play)" },
+      { "command": "nvcRunner.cancel", "title": "NVC: 取消 VHDL 仿真", "icon": "$(debug-stop)" }
+    ],
+    "menus": { "editor/title": [{ "command": "nvcRunner.run", "when": "resourceExtname == .vhd || resourceExtname == .vhdl", "group": "navigation" }] },
+    "configuration": {
+      "title": "NVC Runner",
+      "properties": { "nvcRunner.nvcPath": { "type": "string", "default": "", "scope": "machine-overridable", "description": "NVC 可执行文件完整路径。留空时从 PATH、/opt/homebrew/bin/nvc、/usr/local/bin/nvc 查找。", "restricted": true } }
+    },
+    "jsonValidation": [{ "fileMatch": "vhdl.sim.json", "url": "./schemas/config.schema.json" }]
+  }
+}

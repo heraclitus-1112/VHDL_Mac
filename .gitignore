@@ -1,0 +1,5 @@
+node_modules/
+.nvc-build/
+*.vsix
+.DS_Store
+acceptance/

@@ -1,0 +1,28 @@
+✔ validate ordered config and defaults without mutating input (2.987208ms)
+✔ reject invalid config and injection-like values (0.354583ms)
+✔ resolve real source and library dirs in project with spaces (6.477583ms)
+✔ reject missing sources, source symlink escape, and build symlink (3.610833ms)
+✔ discover VHDL files ignoring generated directories and symlink escapes (5.338167ms)
+✔ run stages in order with consistent context, fresh unique waves and preserve other files (176.999375ms)
+✔ analysis failure stops later stages and cannot return previous waveform (108.952083ms)
+✔ missing new waveform rejects even if an unrelated old waveform exists (83.314417ms)
+✔ cancellation terminates the running child and stops further stages (26.089958ms)
+✔ parse inline and separated NVC diagnostic messages with paths containing spaces (0.558708ms)
+✔ explicit executable override wins and missing executable gives actionable error (1.77125ms)
+✔ parse actual NVC 1.23 arrow location without column (0.113041ms)
+✔ reject source alias into dedicated build directory (2.148542ms)
+✔ all three stages have identical library paths and declared stop time (0.125875ms)
+✔ untrusted run stops before saving dirty documents (5.843375ms)
+✔ run lock is acquired before saving and only saves selected project files (2.909ms)
+✔ configuration wizard cancellation leaves project unchanged (2.572333ms)
+✔ configuration wizard records explicit order and confirmed fields (4.972667ms)
+✔ config symlink cannot overwrite VHDL source (2.398542ms)
+✔ dirty file symlink outside workspace is never saved (2.633541ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 478.169834

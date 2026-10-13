@@ -1,0 +1,7 @@
+.git/**
+.gitignore
+test/**
+acceptance/**
+node_modules/**
+.nvc-build/**
+*.vsix

@@ -1,0 +1,115 @@
+✖ untrusted run stops before saving dirty documents (5.160708ms)
+✖ run lock is acquired before saving and only saves selected project files (2.577083ms)
+✖ configuration wizard cancellation leaves project unchanged (3.505833ms)
+✖ configuration wizard records explicit order and confirmed fields (2.651834ms)
+✖ config symlink cannot overwrite VHDL source (2.937375ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 73.298584
+
+✖ failing tests:
+
+test at test/extension.test.js:15:1
+✖ untrusted run stops before saving dirty documents (5.160708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at init (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:14:29)
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:15:308)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/extension.test.js:16:1
+✖ run lock is acquired before saving and only saves selected project files (2.577083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at init (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:14:29)
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:16:491)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/extension.test.js:17:1
+✖ configuration wizard cancellation leaves project unchanged (3.505833ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at init (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:14:29)
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:17:124)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/extension.test.js:18:1
+✖ configuration wizard records explicit order and confirmed fields (2.651834ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at init (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:14:29)
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:18:381)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/extension.test.js:19:1
+✖ config symlink cannot overwrite VHDL source (2.937375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at init (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:14:29)
+      at TestContext.<anonymous> (/Users/macbookair/Documents/Codex/2026-10-13/zai/work/nvc-extension/source/test/extension.test.js:19:184)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
