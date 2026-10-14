@@ -61,3 +61,11 @@ The English edition keeps the recorded feature and acceptance boundaries. Transl
 - The full `node --test --test-reporter=spec test/*.test.js` run passed all 97 tests, with zero failures and zero skips. Real batch NVC tests exercised natural completion beyond a numeric limit, finish with a periodic clock, cancellation of an endless clock, and generated numeric-duration finish in Run All mode. Persistent interactive and existing waveform regressions also passed.
 - The English-language test now scans the test directory as well as runtime source, schemas, documentation, tools, and examples, and verifies the exact `NVC: Run All` command title.
 - English VSIX packaging and real VS Code GUI acceptance are separate steps; this source verification did not install a VSIX or exercise the English UI in VS Code.
+
+### Run All package and desktop acceptance (2026-10-14)
+
+Chinese 0.4.0: 96/96 tests; English 0.4.1: 97/97; no skips. Both VSIX archives passed integrity and source-content checks. Chinese 0.4.0 remains installed locally.
+
+Real VS Code acceptance used isolated fixtures. The copied Exo4 retained a 5us config; its editor Run All menu omitted --stop-time, printed End of test at 5120ns and opened a fresh FST. Config bytes and user Exo4 source/config hashes stayed unchanged. The new configuration wizard selected all by default; normal Run displayed clk/count/en/rst and finished the asserting counter at 280ns. Default detached window loading and beside rendering were observed. An endless clock was cancelled through the native progress button, then the same project produced a fresh waveform using a 50ns limit. No test NVC process remained.
+
+The English package passed language, semantic comparison and real NVC command-adapter tests. This acceptance run did not separately install the new English GUI; these checks are not presented as independent English GUI proof.
