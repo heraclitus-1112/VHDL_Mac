@@ -132,6 +132,6 @@ bash tools/build-nvc-interactive.sh --install-deps
 
 无第三方运行时依赖；使用 CommonJS 和 Node 内建模块。运行 `npm test` 或 `node --test test/*.test.js`。`test/TEST-EVIDENCE.md` 记录测试先失败再通过的过程。测试使用真实短 Node 子进程验证阶段短路、取消和新波形；VS Code 适配测试只为不能在 Node 直接访问的宿主 API 提供轻量替身。
 
-API：`validateConfig(data)`、`resolveProject(projectDir, data)`、`discoverSources(projectDir)`、`buildStageArgs(resolvedConfig, buildDir, wavePath)`、`runSimulation(options)`、`parseDiagnostics(output, projectDir)`、`resolveNvc(override)`，由 `src/core.js` 导出。`runSimulation` 返回 `{ wavePath, output, projectDir }`，失败抛错；支持 `AbortSignal`、`onOutput`、`onStage`。
+API：`validateConfig(data)`、`resolveProject(projectDir, data)`、`discoverSources(projectDir)`、`buildStageArgs(resolvedConfig, buildDir, wavePath)`、`runSimulation(options)`、`parseDiagnostics(output, projectDir)`、`resolveNvc(override)`，由 `src/core.js` 导出。`runSimulation` 返回 `{ wavePath, output, projectDir }`，失败抛错；支持 `AbortSignal`、`onOutput`、`onStage` 和异步 `onResult(result)`。`onResult` 在新 FST 校验后、结果提交与旧 FST 清理前接收结果；回调可返回异步回滚函数，供提交前取消或提交失败时恢复消费者状态。提交开始后到来的取消请求不会撤销已经接受的新结果。
 
 真实 NVC、VS Code Extension Host 与官方 Surfer 的验收由独立测试负责，Node 单元测试本身不证明 UI 展示正确。

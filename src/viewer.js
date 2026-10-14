@@ -11,27 +11,63 @@ class SurferViewer {
   }
   openCustomDocument(uri) { return { uri, dispose() {} }; }
   stateKey(root) { return `surfer-layout:${root}`; }
-  async show({ projectDir, wavePath }, mode = 'newWindow', preserve = true) {
+  async show({ projectDir, wavePath }, mode = 'newWindow', preserve = true, signal) {
+    const checkCancellation = () => { if (signal?.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; } };
+    checkCancellation();
     const root = await fs.realpath(projectDir), build = path.join(root, '.nvc-build');
     if (await fs.realpath(build) !== build) throw new Error('波形目录不能是符号链接。');
     const wave = await fs.realpath(wavePath);
     if (!within(build, wave) || !(await fs.stat(wave)).isFile()) throw new Error('波形必须是当前项目构建目录内的文件。');
     const marker = path.join(build, 'waveform.nvcwave');
-    try { const info = await fs.lstat(marker); if (info.isSymbolicLink() || !info.isFile()) throw new Error('波形窗口记录不能是符号链接或目录。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
-    try { await fs.writeFile(temporary, JSON.stringify({ wave: path.relative(build, wave), preserve }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
+    let previousMarker;
+    try {
+      const info = await fs.lstat(marker);
+      if (info.isSymbolicLink() || !info.isFile()) throw new Error('波形窗口记录不能是符号链接或目录。');
+      previousMarker = await fs.readFile(marker, 'utf8');
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const old = this.entries.get(marker);
-    if (old) {
-      if (old.loaded) await this.snapshot(old);
-      old.wave = wave; old.preserve = preserve; old.panel.reveal(undefined, false);
-      if (old.ready) await this.load(old);
-      return;
-    }
-    const uri = this.vscode.Uri.file(marker);
-    let separate = mode !== 'beside';
-    if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('当前 VS Code 不支持独立编辑器窗口，已并排显示。'); separate = false; }
-    await this.vscode.commands.executeCommand('vscode.openWith', uri, viewType, { viewColumn: separate ? this.vscode.ViewColumn.Active : this.vscode.ViewColumn.Beside, preview: false });
-    if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`独立窗口打开失败：${error.message}`); }
+    const previousEntry = old && { wave: old.wave, preserve: old.preserve, loaded: old.loaded, loadId: old.loadId };
+    const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
+    let published = false;
+    const rollback = async () => {
+      if (!published) return;
+      // Restore the stable record and prior entry if delivery or the caller's commit fails.
+      if (previousMarker === undefined) await fs.rm(marker, { force: true });
+      else { await fs.writeFile(temporary, previousMarker, { flag: 'wx' }); await fs.rename(temporary, marker); }
+      published = false;
+      const current = this.entries.get(marker);
+      if (old && current === old) {
+        Object.assign(old, previousEntry);
+        if (old.ready) try { old.loaded = false; await this.load(old); } catch (restoreError) { this.warning(`恢复上次波形失败：${restoreError.message}`); }
+      } else if (current) { this.entries.delete(marker); current.panel.dispose?.(); }
+    };
+    try {
+      checkCancellation();
+      await fs.writeFile(temporary, JSON.stringify({ wave: path.relative(build, wave), preserve }), { flag: 'wx' });
+      checkCancellation();
+      await fs.rename(temporary, marker); published = true;
+      checkCancellation();
+      if (old) {
+        if (old.loaded) await this.snapshot(old);
+        checkCancellation();
+        old.wave = wave; old.preserve = preserve; old.panel.reveal(undefined, false);
+        if (old.ready) await this.load(old);
+        checkCancellation();
+        return rollback;
+      }
+      const uri = this.vscode.Uri.file(marker);
+      let separate = mode !== 'beside';
+      if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('当前 VS Code 不支持独立编辑器窗口，已并排显示。'); separate = false; }
+      checkCancellation();
+      await this.vscode.commands.executeCommand('vscode.openWith', uri, viewType, { viewColumn: separate ? this.vscode.ViewColumn.Active : this.vscode.ViewColumn.Beside, preview: false });
+      checkCancellation();
+      if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`独立窗口打开失败：${error.message}`); }
+      checkCancellation();
+      return rollback;
+    } catch (error) {
+      await rollback();
+      throw error;
+    } finally { await fs.rm(temporary, { force: true }); }
   }
   async resolveCustomEditor(document, panel) {
     const marker = document.uri.fsPath, root = path.dirname(path.dirname(marker));

@@ -120,3 +120,49 @@ test('schema accepts all and numeric durations while retaining omitted-field com
   for (const value of ['all','1us','10sec']) assert.ok(new RegExp(field.pattern).test(value), value);
   for (const value of ['ALL','0ns','all;rm','1.2ns']) assert.ok(!new RegExp(field.pattern).test(value), value);
 });
+
+test('rejected result handoff preserves prior waveform and successful result record',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8');
+  let handedOff=false;
+  await assert.rejects(core.runSimulation({...options,onResult:async result=>{
+    handedOff=true;assert.ok((await fs.stat(result.wavePath)).size>0);assert.ok((await fs.stat(prior.wavePath)).size>0);
+    throw new Error('viewer refused result');
+  }}),/viewer refused result/);
+  assert.equal(handedOff,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+test('cancellation during async result handoff preserves prior waveform and record',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8'),controller=new AbortController();
+  let handedOff=false;
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal,onResult:async()=>{
+    handedOff=true;await new Promise(resolve=>setImmediate(resolve));controller.abort();
+  }}),error=>error.name==='AbortError');
+  assert.equal(handedOff,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+
+test('cancellation while preparing result publication cannot delete the previous waveform',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8'),controller=new AbortController();
+  const writeFile=fs.writeFile;let intercepted=false;
+  t.after(()=>{fs.writeFile=writeFile;});
+  fs.writeFile=async(filename,...args)=>{
+    const result=await writeFile(filename,...args);
+    if(path.dirname(filename)===path.join(root,'.nvc-build')&&path.basename(filename).startsWith('.result-')){intercepted=true;controller.abort();}
+    return result;
+  };
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal}),error=>error.name==='AbortError');
+  assert.equal(intercepted,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+
+test('result handoff rollback is called if cancellation occurs before the commit',async t=>{
+ const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options),controller=new AbortController();
+ let restored=false;
+ await assert.rejects(core.runSimulation({...options,signal:controller.signal,onResult:async()=>{
+  controller.abort();return async()=>{restored=true;};
+ }}),error=>error.name==='AbortError');
+ assert.equal(restored,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+});

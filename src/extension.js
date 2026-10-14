@@ -159,12 +159,13 @@ function createExtension(vscode, context) {
         if (token.isCancellationRequested) controller.abort();
         try {
           checkTrust();
-          const result = await core.runSimulation({ executable, projectDir: root, config, signal: controller.signal, onOutput: text => output.append(text), onStage: (stage, args) => { progress.report({ message: { analysis: '分析源文件', elaboration: '展开测试平台', simulation: '运行仿真' }[stage] }); output.appendLine(`\n${executable} ${args.map(arg => JSON.stringify(arg)).join(' ')}`); } });
-          updateDiagnostics(result.output, root);
-          await surfer.activate();
-          if (controller.signal.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; }
-          const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
-          await viewer.show(result, windowMode, vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('preserveWaveformLayout', true));
+          const result = await core.runSimulation({ executable, projectDir: root, config, signal: controller.signal, onOutput: text => output.append(text), onStage: (stage, args) => { progress.report({ message: { analysis: '分析源文件', elaboration: '展开测试平台', simulation: '运行仿真' }[stage] }); output.appendLine(`\n${executable} ${args.map(arg => JSON.stringify(arg)).join(' ')}`); }, onResult: async pending => {
+            updateDiagnostics(pending.output, root);
+            await surfer.activate();
+            if (controller.signal.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; }
+            const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
+            return viewer.show(pending, windowMode, vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('preserveWaveformLayout', true), controller.signal);
+          } });
           output.appendLine(`\n本次波形：${result.wavePath}`);
           return result;
         } catch (error) { if (error.output !== undefined) updateDiagnostics(error.output, root); throw error; }

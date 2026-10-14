@@ -94,15 +94,15 @@ function executeStage(executable, args, cwd, signal, onOutput) {
     if (signal?.aborted) cancel();
   });
 }
-async function cleanOwnedWave(buildDir) {
+async function ownedWave(buildDir) {
   const marker = path.join(buildDir, '.nvc-runner.json');
   try {
     if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('构建记录不能是符号链接。');
     const previous = JSON.parse(await fs.readFile(marker, 'utf8'));
-    if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) await fs.unlink(path.join(buildDir, previous.wave)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) return path.join(buildDir, previous.wave);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-async function runSimulation({ executable, executableArgs = [], projectDir, config, signal, onOutput, onStage }) {
+async function runSimulation({ executable, executableArgs = [], projectDir, config, signal, onOutput, onStage, onResult }) {
   if (signal?.aborted) throw abortError();
   const resolved = await resolveProject(projectDir, config);
   await fs.mkdir(resolved.buildDir, { recursive: true });
@@ -119,11 +119,25 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   if (signal?.aborted) throw abortError();
   let stat; try { stat = await fs.lstat(wavePath); } catch { throw new Error('NVC 未生成本次运行的新波形。请检查测试平台与 NVC 输出。'); }
   if (!stat.isFile() || stat.size === 0) throw new Error('本次波形为空或不是普通文件。请检查测试平台与 NVC 输出。');
-  // Keep the last successful result accessible when analysis or simulation fails.
-  await cleanOwnedWave(resolved.buildDir);
+  // Keep the previous file until the consumer has accepted this result.
+  const previousWave = await ownedWave(resolved.buildDir);
+  if (signal?.aborted) throw abortError();
+  const result = { wavePath, output, projectDir: resolved.projectDir };
   const temporary = path.join(resolved.buildDir, `.result-${randomUUID()}.tmp`);
-  try { await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
-  return { wavePath, output, projectDir: resolved.projectDir };
+  let rollback;
+  try {
+    await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' });
+    if (signal?.aborted) throw abortError();
+    rollback = await onResult?.(result);
+    if (signal?.aborted) throw abortError();
+    // Atomic publication is the commit point. Later cancellation does not undo acceptance.
+    await fs.rename(temporary, marker);
+  } catch (error) {
+    if (typeof rollback === 'function') await rollback();
+    throw error;
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (previousWave) await fs.unlink(previousWave).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  return result;
 }
 function parseDiagnostics(output, projectDir) {
   const results = []; let pending;

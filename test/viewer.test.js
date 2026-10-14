@@ -8,3 +8,29 @@ async function project(t){const root=await fs.realpath(await fs.mkdtemp(path.joi
 test('restore only state from the matching Surfer version and honour reset preference',async t=>{const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{});f.stored.set(viewer.stateKey(root),{version:'0.7.1001488',state:'layout'});await viewer.show({projectDir:root,wavePath:path.join(root,'.nvc-build/a.fst')});await f.panel.receive({command:'ready'});assert.equal(f.messages.find(m=>m.command==='load').restore,'layout');await f.panel.receive({command:'loaded'});await viewer.show({projectDir:root,wavePath:path.join(root,'.nvc-build/a.fst')},'newWindow',false);assert.equal(f.messages.filter(m=>m.command==='load').at(-1).keep,false);assert.equal(f.messages.filter(m=>m.command==='load').at(-1).restore,undefined);f.panel.close();f.stored.set(viewer.stateKey(root),{version:'old',state:'obsolete'});await viewer.show({projectDir:root,wavePath:path.join(root,'.nvc-build/a.fst')});await f.panel.receive({command:'ready'});assert.equal(f.messages.filter(m=>m.command==='load').at(-1).restore,undefined);});
 test('native save, command and waveform dialogs preserve the official message protocol',async t=>{const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{}),saved=[];f.vscode.window.showSaveDialog=async()=>f.vscode.Uri.file(path.join(root,'state.ron'));f.vscode.workspace={fs:{writeFile:async(uri,data)=>saved.push([uri.fsPath,data.toString()]),readFile:async()=>Buffer.from('zoom_fit')}};const filters=[];f.vscode.window.showOpenDialog=async options=>{filters.push(options.filters);return[f.vscode.Uri.file(path.join(root,'external.sucl'))];};await viewer.show({projectDir:root,wavePath:path.join(root,'.nvc-build/a.fst')});await f.panel.receive({command:'vscodeSaveStateFromWasm',data:'actual RON'});assert.equal(saved[0][1],'actual RON');await f.panel.receive({command:'open-dialog',kind:'command_file'});assert.equal(f.messages.at(-1).kind,'command_file');assert.deepEqual(filters[0],{'Surfer 命令':['sucl']});await f.panel.receive({command:'open-dialog',kind:'waveform_clear'});assert.equal(f.calls.at(-1)[2],'surfer.waveformViewer');});
 test('interactive waves in a nested directory resolve through the stable project marker',async t=>{const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{}),wave=path.join(root,'.nvc-build/interactive-test/segment.vcd');await fs.mkdir(path.dirname(wave));await fs.writeFile(wave,'wave');await viewer.show({projectDir:root,wavePath:wave});await f.panel.receive({command:'ready'});assert.match(f.messages.find(m=>m.command==='load').url,/interactive-test\/segment.vcd/);});
+
+
+test('failed reuse restores the viewer marker and prior entry and reloads the previous wave',async t=>{
+ const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{});t.after(()=>viewer.dispose());
+ const first=path.join(root,'.nvc-build/a.fst'),second=path.join(root,'.nvc-build/b.fst'),marker=path.join(root,'.nvc-build/waveform.nvcwave');
+ await fs.writeFile(second,'new-wave');await viewer.show({projectDir:root,wavePath:first},'beside');
+ await f.panel.receive({command:'ready'});await f.panel.receive({command:'loaded'});const snapshot=await fs.readFile(marker,'utf8');
+ const postMessage=f.panel.webview.postMessage;
+ f.panel.webview.postMessage=async message=>{if(message.command==='load'&&message.url.endsWith('b.fst'))throw new Error('load delivery failed');return postMessage(message);};
+ await assert.rejects(viewer.show({projectDir:root,wavePath:second},'beside'),/load delivery failed/);
+ assert.equal(await fs.readFile(marker,'utf8'),snapshot);assert.equal(viewer.entries.get(marker).wave,first);
+ assert.match(f.messages.filter(message=>message.command==='load').at(-1).url,/a\.fst$/);
+ assert.equal(f.messages.filter(message=>message.command==='load').at(-1).restore,'saved-layout');
+});
+test('cancellation during existing viewer load restores prior marker and sends old wave again',async t=>{
+ const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{});t.after(()=>viewer.dispose());
+ const first=path.join(root,'.nvc-build/a.fst'),second=path.join(root,'.nvc-build/b.fst'),marker=path.join(root,'.nvc-build/waveform.nvcwave');
+ await fs.writeFile(second,'new-wave');await viewer.show({projectDir:root,wavePath:first},'beside');
+ await f.panel.receive({command:'ready'});await f.panel.receive({command:'loaded'});const snapshot=await fs.readFile(marker,'utf8'),controller=new AbortController();
+ const postMessage=f.panel.webview.postMessage;
+ f.panel.webview.postMessage=async message=>{const result=await postMessage(message);if(message.command==='load'&&message.url.endsWith('b.fst'))controller.abort();return result;};
+ await assert.rejects(viewer.show({projectDir:root,wavePath:second},'beside',true,controller.signal),error=>error.name==='AbortError');
+ assert.equal(await fs.readFile(marker,'utf8'),snapshot);assert.equal(viewer.entries.get(marker).wave,first);
+ assert.match(f.messages.filter(message=>message.command==='load').at(-1).url,/a\.fst$/);
+ assert.equal(f.messages.filter(message=>message.command==='load').at(-1).restore,'saved-layout');
+});

@@ -153,3 +153,71 @@ test('Run All runtime failure reports diagnostics and preserves the previous vie
   assert.equal(await fs.readFile(marker,'utf8'),previous);assert.ok((await fs.stat(prior.wavePath)).size>0);
   assert.equal(s.calls.filter(([kind])=>kind==='vscode.openWith').length,1);
 });
+
+test('Run All cancelled during Surfer activation preserves last displayed wave and records', {timeout:15000}, async t=>{
+  const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+  try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+  const root=await fixture(t),s=fake(root);
+  await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; report "END_REPORT"; wait; end process; end;');
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());
+  const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+  const viewerMarker=path.join(root,'.nvc-build','waveform.nvcwave'),resultMarker=path.join(root,'.nvc-build','.nvc-runner.json');
+  const viewerSnapshot=await fs.readFile(viewerMarker,'utf8'),resultSnapshot=await fs.readFile(resultMarker,'utf8');
+  s.vscode.extensions.getExtension=()=>({activate:async()=>{await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.cancel')();}});
+  assert.equal(await s.commands.get('nvcRunner.runAll')(),undefined);
+  assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(viewerMarker,'utf8'),viewerSnapshot);assert.equal(await fs.readFile(resultMarker,'utf8'),resultSnapshot);
+  assert.deepEqual(s.errors,[]);assert.equal(s.calls.filter(([kind])=>kind==='vscode.openWith').length,1);
+  s.vscode.extensions.getExtension=()=>({activate:async()=>{}});
+  const next=await s.commands.get('nvcRunner.run')();assert.ok(next,s.errors.join(' '));
+});
+test('Run All viewer open failure preserves the last successful FST and result record', {timeout:15000}, async t=>{
+  const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+  try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+  const root=await fixture(t),s=fake(root);
+  await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; wait; end process; end;');
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8');
+  const viewerMarker=path.join(root,'.nvc-build','waveform.nvcwave'),viewerSnapshot=await fs.readFile(viewerMarker,'utf8');
+  s.vscode.commands.executeCommand=async()=>{throw new Error('viewer open failed');};
+  assert.equal(await s.commands.get('nvcRunner.runAll')(),undefined);assert.match(s.errors[0],/viewer open failed/);
+  assert.ok((await fs.stat(prior.wavePath)).size>0);assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+  assert.equal(await fs.readFile(viewerMarker,'utf8'),viewerSnapshot);
+});
+
+test('Run All cancellation while awaiting viewer open retains the previous successful file', {timeout:15000}, async t=>{
+  const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+  try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+  const root=await fixture(t),s=fake(root);
+  await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; wait; end process; end;');
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8');
+  const viewerMarker=path.join(root,'.nvc-build','waveform.nvcwave'),viewerSnapshot=await fs.readFile(viewerMarker,'utf8');
+  s.vscode.commands.executeCommand=async()=>{await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.cancel')();};
+  assert.equal(await s.commands.get('nvcRunner.runAll')(),undefined);
+  assert.ok((await fs.stat(prior.wavePath)).size>0);assert.equal(await fs.readFile(marker,'utf8'),snapshot);assert.deepEqual(s.errors,[]);
+  assert.equal(await fs.readFile(viewerMarker,'utf8'),viewerSnapshot);
+});
+
+test('failed core commit rolls back the viewer handoff and keeps the old successful wave', {timeout:15000}, async t=>{
+ const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+ try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+ const root=await fixture(t),s=fake(root);
+ await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; wait; end process; end;');
+ await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+ s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+ const instance=init(s);t.after(()=>instance.dispose());const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+ const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8');
+ const viewerMarker=path.join(root,'.nvc-build','waveform.nvcwave'),viewerSnapshot=await fs.readFile(viewerMarker,'utf8');
+ const rename=fs.rename;t.after(()=>{fs.rename=rename;});
+ fs.rename=async(from,to)=>{if(to===marker&&path.basename(from).startsWith('.result-'))throw new Error('commit refused');return rename(from,to);};
+ assert.equal(await s.commands.get('nvcRunner.runAll')(),undefined);assert.match(s.errors[0],/commit refused/);
+ assert.ok((await fs.stat(prior.wavePath)).size>0);assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+ assert.equal(await fs.readFile(viewerMarker,'utf8'),viewerSnapshot);
+});
