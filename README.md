@@ -1,35 +1,44 @@
 # VHDL Mac · NVC Runner
 
-在 VS Code 中点击播放按钮，按配置顺序执行 NVC 分析、展开、仿真，成功后默认在独立窗口打开官方 Surfer 波形查看器。
+**English edition on the `english` branch.** The [Chinese edition is maintained on `main`](https://github.com/heraclitus-1112/VHDL_Mac/tree/main).
 
-## 在 Mac 上安装
+Click the play button in VS Code to run NVC analysis, elaboration, and simulation in the configured order. After a successful run, the official Surfer waveform viewer opens in a separate window by default.
 
-需要先安装 VS Code 和 Homebrew；在终端执行：
+## Install on macOS
+
+Install VS Code and Homebrew first, then run:
 
 ```sh
 brew install nvc
-git clone https://github.com/heraclitus-1112/VHDL_Mac.git
+git clone --branch english https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.3.1.vsix
+code --install-extension packages/nvc-runner-0.3.2-en.vsix
 code examples/counter
 ```
 
-`code` 不在 PATH 中时，在 VS Code 命令面板执行 **Shell Command: Install 'code' command in PATH**，或在扩展视图中选择 **从 VSIX 安装**。
+If `code` is not on your PATH, run **Shell Command: Install 'code' command in PATH** from the VS Code Command Palette, or select **Install from VSIX** in the Extensions view.
 
-打开 `examples/counter/tb_counter.vhd`，点击右上角 ▶ 即可运行已配置示例。NVC 输出应出现 `TB_PASS`，Surfer 在独立窗口打开波形；选中层级后点击 Variables 中的信号名加入波形图。详细操作见 [中文使用说明](docs/使用说明.md)。
+The English VSIX uses manifest version `0.3.2` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
 
-本仓库提供扩展源码和预构建 VSIX；NVC 与官方 Surfer 需单独安装。当前验证环境为 Apple Silicon Mac、NVC 1.23.0、VS Code 1.132.0。扩展需要 VS Code 1.85 或以上；独立窗口功能在窗口命令不可用时回退到并排。
+```sh
+git clone --branch main https://github.com/heraclitus-1112/VHDL_Mac.git VHDL_Mac-Chinese
+code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.3.1.vsix --force
+```
 
-## 使用
+Open `examples/counter/tb_counter.vhd` and click ▶ in the top-right corner to run the configured example. NVC should print `TB_PASS`, and Surfer should open the waveform in a separate window. Select a scope, then click signal names under Variables to add them to the waveform. See the [user guide](docs/USER-GUIDE.md) for detailed instructions.
 
-1. 安装 NVC，并安装官方扩展 `surfer-project.surfer`。扩展要求 VS Code 1.85 或以上及可信任的本地工作区。
-2. 打开包含设计和测试平台的文件夹，执行 **NVC: 配置 VHDL 仿真**。
-3. 多选源文件，再逐项指定编译顺序；确认顶层测试平台实体、VHDL 标准和停止时间。
-4. 打开 `.vhd` / `.vhdl`，点击编辑器右上角播放按钮，或点击状态栏 **NVC 仿真**。
-5. 在 Surfer 中选择要观察的信号。该查看器维护自己的信号选择界面。
+This repository provides extension source and a prebuilt VSIX. Install NVC and the official Surfer extension separately. The verified environment is an Apple Silicon Mac, NVC 1.23.0, and VS Code 1.132.0. The extension requires VS Code 1.85 or later. If the separate-window command is unavailable, waveforms open beside the code instead.
 
-每个工作区根目录使用 `vhdl.sim.json`：
+## Use
+
+1. Install NVC and the official `surfer-project.surfer` extension. Use VS Code 1.85 or later and a trusted local workspace.
+2. Open a folder containing the design and testbench, then run **NVC: Configure VHDL Simulation**.
+3. Select the source files, specify their compilation order, and confirm the top-level testbench entity, VHDL standard, and stop time.
+4. Open a `.vhd` or `.vhdl` file and click the editor's play button or **NVC Simulation** in the status bar.
+5. Select the signals to observe in Surfer, which provides its own signal-selection interface.
+
+Each workspace root uses `vhdl.sim.json`:
 
 ```json
 {
@@ -41,41 +50,41 @@ code examples/counter
 }
 ```
 
-## 自动生成 Testbench（0.2.0）
+## Generate a testbench (0.2.0)
 
-打开被测**设计文件**，执行 **NVC: 生成 Testbench**（`⌘⇧P`），或在资源管理器里右键该文件。向导读取当前编辑器的实体接口，包括未保存修改；多个实体或 architecture 时选择被测对象，整数泛型可修改。
+Open the **design under test** and run **NVC: Generate Testbench** (`⌘⇧P`), or right-click the file in the Explorer. The wizard reads the entity interface from the current editor, including unsaved changes. If the file contains multiple entities or architectures, select the one to test. You can also edit integer generic values.
 
-先设置结束时间，再逐个 `in` 端口选择：
+Set the end time, then choose a stimulus mode for each `in` port:
 
-| 模式 | 填写示例 | 含义 |
+| Mode | Example | Behavior |
 |---|---|---|
-| 固定值 | `0`、`true`、`-4`、`x"A5"` | 全程保持指定值 |
-| 定时变化 | `0ns=0;20ns=1;100ns=0` | 从零时刻开始，按严格递增的时间变化 |
-| 周期时钟 | 初值 `0`，开始 `0ns`，周期 `10ns` | 开始前保持初值，之后每半周期翻转 |
+| Constant | `0`, `true`, `-4`, `x"A5"` | Holds the specified value throughout the simulation |
+| Timed changes | `0ns=0;20ns=1;100ns=0` | Starts at time zero and changes at strictly increasing times |
+| Periodic clock | Initial value `0`, start `0ns`, period `10ns` | Holds the initial value until the start time, then toggles every half-period |
 
-向量可用十进制、`"0101"` / `0b0101`、`x"A5"` / `0xA5`；二进制和十六进制必须匹配完整位宽，十进制按 signed/unsigned 范围检查。周期模式仅用于 `std_logic`。所有时间为非负整数加 fs/ps/ns/us/ms/sec，输入变化必须早于结束时间。
+Vectors accept decimal values, `"0101"` / `0b0101`, and `x"A5"` / `0xA5`. Binary and hexadecimal values must match the full bit width; decimal values are checked against the signed or unsigned range. Periodic clocks support only `std_logic`. Times use a nonnegative integer followed by fs/ps/ns/us/ms/sec. Input changes must occur before the end time.
 
-确认新实体名称并预览后，创建根目录下的同名 `.vhd`；已有文件不会覆盖。选择 **设为仿真顶层** 并确认编译顺序、标准和时限，即可点击 ▶ 运行。原有库路径保留；未配置项目先选择依赖源文件并确认顺序。生成使用 VHDL-2008。
+Confirm the new entity name and review the preview. The wizard creates a `.vhd` file with that name in the workspace root and never overwrites an existing file. Choose **Set as Simulation Top**, confirm compilation order, standard, and time limit, then click ▶. Existing library paths are preserved. For an unconfigured project, first select the dependency source files and confirm their order. Generated testbenches use VHDL-2008.
 
-支持 std_logic、std_logic_vector、signed、unsigned、boolean 和基本整数/整数范围，支持简单整数泛型及位宽中的 `+ - * /` 运算。自定义类型、复杂泛型、inout/buffer 和扩展标识符等会提示不支持。输出仅连接观察，不生成输出驱动。生成器提供**输入激励**，预期输出仍需按设计要求填写 `assert`；完成提示为 `STIMULUS_DONE: no output assertions configured`，不冒充测试通过。
+Supported interfaces include std_logic, std_logic_vector, signed, unsigned, boolean, basic integer types and integer ranges, simple integer generics, and `+ - * /` expressions in bit widths. Custom types, complex generics, inout/buffer ports, extended identifiers, and other unsupported constructs produce an explanation. Output ports are connected for observation and are never driven by the generator. The generator supplies **input stimulus**; add `assert` statements to check expected outputs against the design requirements. Without output assertions, completion reports `STIMULUS_DONE: no output assertions configured`, not a test pass.
 
-测试时可以为计数器选择：clk 周期 10ns，rst 定时 `0ns=1;20ns=0`，en 定时 `0ns=0;20ns=1;100ns=0;130ns=1`，结束 300ns，文件名 `tb_counter_inputs`。
+For the counter example, use a 10ns periodic clk; rst changes `0ns=1;20ns=0`; en changes `0ns=0;20ns=1;100ns=0;130ns=1`; an end time of 300ns; and the file name `tb_counter_inputs`.
 
-`sources` 必须是工作区内存在的 `.vhd` / `.vhdl` 文件，顺序就是编译顺序，不能使用 `..` 或符号链接逃出工作区。`top` 是顶层基本实体名称，不带库名前缀。`standard` 可选 `1993` / `2002` / `2008`，默认 `2008`。`stopTime` 为正整数加 `fs` / `ps` / `ns` / `us` / `ms` / `sec`，默认 `1us`。`libraryPaths` 是已经存在的库目录，可使用相对或绝对路径；本扩展不会自动编译外部库。
+`sources` must list existing `.vhd` / `.vhdl` files inside the workspace in compilation order. Neither `..` nor symbolic links may escape the workspace. `top` is a basic top-level entity name without a library prefix. `standard` accepts `1993`, `2002`, or `2008`, with `2008` as the default. `stopTime` is a positive integer followed by `fs`, `ps`, `ns`, `us`, `ms`, or `sec`; the default is `1us`. `libraryPaths` lists existing library directories, using relative or absolute paths. The extension does not compile external libraries automatically.
 
-配置向导忽略 `.nvc-build`、`.git`、`node_modules`、`build`、`dist`、`out`、`.vscode-test`，不会扫描符号链接。向导取消时不会写入配置。已有配置需要点击“替换”才会覆盖。
+The configuration wizard ignores `.nvc-build`, `.git`, `node_modules`, `build`, `dist`, `out`, and `.vscode-test`, and does not scan symbolic links. Canceling the wizard leaves the configuration untouched. An existing configuration is overwritten only after you choose **Replace**.
 
-多根工作区优先使用当前编辑器所属项目；没有所属项目时显示选择列表。只保存选中项目中的脏文件，保存失败便停止。每个项目同时只允许一次仿真或配置操作。可以通过进度通知的取消按钮，或 **NVC: 取消 VHDL 仿真**，终止当前项目的进程。
+In a multi-root workspace, the extension prefers the project containing the current editor. Otherwise, it asks you to select a project. It saves dirty files only in that project and stops if saving fails. Each project allows only one simulation or configuration operation at a time. Cancel the current project's process using the progress notification or **NVC: Cancel VHDL Simulation**.
 
-0.2.1 修复了重新生成时的旧路径问题：设置新顶层前会识别配置中已删除的源文件，在确认窗口列出将移除的条目；确认后清理失效路径，取消则保留原配置。若缺少的是设计依赖，请取消并重新选择依赖文件。
+Version 0.2.1 fixed stale source paths when regenerating a testbench. Before setting the new top, the wizard detects deleted source files and lists the entries to remove. Confirmation removes stale paths; cancellation preserves the original configuration. If a missing file is a required design dependency, cancel and select the dependency files again.
 
-## 运行与波形
+## Simulation and waveforms
 
-0.2.2 起默认使用独立的 VS Code 编辑器窗口显示波形，代码留在原窗口。VS Code 设置中的 **NVC Runner: Waveform Window** 可选择 `newWindow`（独立窗口，默认）或 `beside`（并排）。0.3.1 修复了恢复布局后残留 `Not available` 的问题：自动清理失效信号引用，保留有效信号和视图设置。
+Since 0.2.2, waveforms open in a separate VS Code editor window by default, leaving the code in the original window. **NVC Runner: Waveform Window** accepts `newWindow` (the default) or `beside`. Version 0.3.1 fixed lingering `Not available` entries after layout restoration: invalid signal references are removed while valid signals and view settings are preserved.
 
-0.3.0 起，同一项目复用一个固定波形窗口；重跑保留已选信号、顺序、格式、游标和视图，关闭后重新打开也会恢复。可用 `nvcRunner.preserveWaveformLayout` 关闭恢复；Surfer 版本变化时自动重置布局。旧版 VS Code 若缺少窗口命令则回退到并排并在输出中说明。
+Since 0.3.0, each project reuses a dedicated waveform window. Rerunning preserves selected signals, their order and formats, cursors, and the view. Closing and reopening also restores the layout. Disable this behavior with `nvcRunner.preserveWaveformLayout`. A Surfer version change resets the saved layout automatically. On older VS Code versions without the window command, the extension opens beside the code and explains the fallback in its output.
 
-各阶段以参数数组直接启动可执行文件，不调用 shell：
+Each stage launches the executable directly with an argument array, without a shell:
 
 ```text
 nvc --std=2008 --work=work:<project>/.nvc-build/work -a <sources...>
@@ -83,45 +92,45 @@ nvc --std=2008 --work=work:<project>/.nvc-build/work -e tb_counter
 nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --stop-time=1us --wave=<unique.fst>
 ```
 
-库目录通过各阶段共有的 `-L <directory>` 传入。任一阶段失败后停止；所有阶段成功且本次新 FST 存在、非空时，才更新 `nvcRunner.waveformViewer`，使用已安装的官方 Surfer 渲染资源。每次使用独立 FST 文件名，保证旧编辑器不会冒充本次结果。
+Library directories are passed as `-L <directory>` to every stage. A failed stage stops the run. The `nvcRunner.waveformViewer` editor is updated only after all stages succeed and the current run's new FST exists and is nonempty. It uses rendering resources from the installed official Surfer extension. Each run uses a unique FST filename so an old editor cannot be mistaken for the current result.
 
-构建文件只放在 `.nvc-build`；该目录及其 `work` 子目录不能是符号链接。扩展只删除 `.nvc-runner.json` 中记录的上一次自有波形，保留其他文件。失败时保留上次已显示的波形；该波形代表上次成功结果，请查看“NVC 仿真”输出中的本次状态。
+Build artifacts stay in `.nvc-build`. Neither that directory nor its `work` subdirectory may be a symbolic link. The extension deletes only its previous waveform recorded in `.nvc-runner.json`, preserving other files. A failed run leaves the last displayed waveform intact; that waveform represents the previous successful run. Check **NVC Simulation** output for the current run's status.
 
-所有 NVC 输出进入 **NVC 仿真** 输出通道；可解析的源文件行列错误和警告进入 **问题** 面板。找不到配置时运行配置命令；找不到 NVC 时设置 `nvcRunner.nvcPath` 为完整可执行文件路径。留空会查找 `PATH`、`/opt/homebrew/bin/nvc` 和 `/usr/local/bin/nvc`。需要先信任工作区。
+All NVC output appears in the **NVC Simulation** output channel. Source errors and warnings with parseable file, line, and column locations appear in the **Problems** panel. If configuration is missing, run the configuration command. If NVC cannot be found, set `nvcRunner.nvcPath` to its full executable path. An empty setting searches `PATH`, `/opt/homebrew/bin/nvc`, and `/usr/local/bin/nvc`. Trust the workspace before running.
 
-本扩展可生成受支持接口的输入激励测试平台，并运行已有测试平台，不综合、不烧录 FPGA。基础 `vhdl` 语言识别用于按钮入口；语法高亮和语言服务可以另装扩展。
+The extension generates input-stimulus testbenches for supported interfaces and runs existing testbenches. It does not synthesize designs or program FPGAs. Basic `vhdl` language registration enables the editor buttons; install a separate extension for syntax highlighting and language services.
 
-## 交互仿真（0.3.0）
+## Interactive simulation (0.3.0)
 
-普通 ▶ 执行完整 testbench。需要分段推进、暂停和临时改输入时，运行 **NVC: 启动交互仿真**。首次编译后自动运行初始 100ns（若提前 finish，则停在实际结束时间），在同一个波形窗口上方显示交互按钮：
+The normal ▶ button runs the complete testbench. For incremental advancement, pauses, and temporary input overrides, run **NVC: Start Interactive Simulation**. After compilation, the session runs an initial 100ns, or stops at the actual finish time if the testbench finishes earlier. Controls appear above the waveform in the same window:
 
-| 按钮 | 操作 |
+| Button | Action |
 |---|---|
-| 运行一段 | 输入 `100ns` 等时长，保留仿真内部状态并继续推进 |
-| 继续 / 暂停 | 按指定时长连续分段运行，暂停在当前段结束后生效 |
-| 强制输入 | 选择层级信号并填入 NVC 值，例如 `'0'`、`'1'` 或 `"0101"` |
-| 解除强制 | 解除所选信号的覆盖，让原来的驱动重新控制它 |
-| 读信号 | 读取暂停时的实际值 |
-| 结束会话 | 结束持续进程；修改代码后重新编译需要先结束会话 |
+| Run segment | Enter a duration such as `100ns` to advance while preserving simulation state |
+| Continue / Pause | Run consecutive segments of the specified duration; Pause takes effect at the end of the current segment |
+| Force input | Select a hierarchical signal and enter an NVC value such as `'0'`, `'1'`, or `"0101"` |
+| Release force | Remove the selected signal's override so its original drivers control it again |
+| Read signal | Read the actual value while paused |
+| End session | Stop the persistent process; end the session before recompiling changed code |
 
-强制/解除后再运行一段以观察响应。工具栏显示实际仿真时间，而不是简单累计输入时长；时长小于下一事件时实际时间可能不变，连续模式会自动暂停并提示加长运行段。testbench 调用 `finish` / `stop` 后不能继续，需结束并重启会话。每段波形是同一持续进程的原生累计数据。只在段末刷新，不提供语句断点或单步源代码调试。
+After forcing or releasing a signal, run another segment to observe the response. The toolbar shows actual simulation time, not the sum of requested durations. If a duration is shorter than the time to the next event, actual time may not advance. Continuous mode then pauses automatically and suggests a longer segment. After a testbench calls `finish` / `stop`, it cannot continue; end and restart the session. Each segment's waveform contains native cumulative data from the same persistent process. Waveforms refresh only at segment boundaries. Statement breakpoints and source-code single stepping are not supported.
 
-交互模式需要带 Tcl 的 NVC 和本仓库的**实验原生波形补丁**；普通 Homebrew NVC 保持用于批仿真。Apple Silicon Mac 可执行：
+Interactive mode requires an NVC build with Tcl and this repository's **experimental native waveform patch**. Keep ordinary Homebrew NVC for batch simulation. On an Apple Silicon Mac, run:
 
 ```sh
 bash tools/build-nvc-interactive.sh --install-deps
 ```
 
-脚本使用固定校验和的官方 NVC 1.23.0 源码，安装到 `~/.local/share/vhdl-mac/nvc-interactive-livewave`，保留对应 GPL 源码与构建记录，不替换 Homebrew NVC。补丁与构建脚本为 GPL-3.0-or-later；它不是 NVC 官方发行版。其他安装位置可在 `nvcRunner.interactiveNvcPath` 设置。
+The script uses official NVC 1.23.0 source with a pinned checksum and installs to `~/.local/share/vhdl-mac/nvc-interactive-livewave`. It retains the corresponding GPL source and build records, and does not replace Homebrew NVC. The patch and build script are licensed under GPL-3.0-or-later. This patched build is not an official NVC release. Set `nvcRunner.interactiveNvcPath` for another installation location.
 
-在 `vhdl.sim.json` 加入 `"dumpArrays": 1024`，普通批仿真就会把最多含 1024 个元素的嵌套数组加入波形。0 表示关闭；当前交互快照不支持该数组选项。
+Add `"dumpArrays": 1024` to `vhdl.sim.json` to include nested arrays with up to 1024 elements in batch waveforms. Set it to 0 to disable array dumping. Current interactive snapshots do not support this option.
 
-布局按项目保存于本地 VS Code 工作区状态，不上传。Surfer 内部状态接口可能随版本变化；当前已验证官方 Surfer 0.7.1001488。安装包不捆绑 Surfer 资源。
+Layouts are stored locally in VS Code workspace state for each project and are not uploaded. Surfer's internal state interface may change between versions. The currently verified official Surfer version is 0.7.1001488. The VSIX does not bundle Surfer resources.
 
-## 开发与验证
+## Development and verification
 
-无第三方运行时依赖；使用 CommonJS 和 Node 内建模块。运行 `npm test` 或 `node --test test/*.test.js`。`test/TEST-EVIDENCE.md` 记录测试先失败再通过的过程。测试使用真实短 Node 子进程验证阶段短路、取消和新波形；VS Code 适配测试只为不能在 Node 直接访问的宿主 API 提供轻量替身。
+There are no third-party runtime dependencies. The extension uses CommonJS and Node built-in modules. Run `npm test` or `node --test test/*.test.js`. [Test evidence](test/TEST-EVIDENCE.md) records the sequence of failing and passing tests. Tests use real short-lived Node child processes to check stage short-circuiting, cancellation, and fresh waveforms. VS Code adapter tests use lightweight substitutes only for host APIs unavailable directly in Node.
 
-API：`validateConfig(data)`、`resolveProject(projectDir, data)`、`discoverSources(projectDir)`、`buildStageArgs(resolvedConfig, buildDir, wavePath)`、`runSimulation(options)`、`parseDiagnostics(output, projectDir)`、`resolveNvc(override)`，由 `src/core.js` 导出。`runSimulation` 返回 `{ wavePath, output, projectDir }`，失败抛错；支持 `AbortSignal`、`onOutput`、`onStage`。
+`src/core.js` exports `validateConfig(data)`, `resolveProject(projectDir, data)`, `discoverSources(projectDir)`, `buildStageArgs(resolvedConfig, buildDir, wavePath)`, `runSimulation(options)`, `parseDiagnostics(output, projectDir)`, and `resolveNvc(override)`. `runSimulation` returns `{ wavePath, output, projectDir }` and throws on failure. It supports `AbortSignal`, `onOutput`, and `onStage`.
 
-真实 NVC、VS Code Extension Host 与官方 Surfer 的验收由独立测试负责，Node 单元测试本身不证明 UI 展示正确。
+Separate acceptance tests cover real NVC, the VS Code Extension Host, and the official Surfer viewer. Passing Node unit tests alone does not establish that the waveform UI displays correctly.

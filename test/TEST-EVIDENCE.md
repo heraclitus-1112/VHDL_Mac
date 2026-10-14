@@ -1,51 +1,55 @@
-# 自动测试证据
+# Automated test evidence
 
-运行时：`node`（v24.19.0）。
+This document translates the recorded development and acceptance evidence. Historical test counts describe those checkpoints, not the current suite size. Raw historical logs are available in the [Chinese edition's `main` branch and Git history](https://github.com/heraclitus-1112/VHDL_Mac/tree/main/test); obsolete logs are not duplicated in the English edition.
 
-1. 在 `src/core.js` 尚不存在时编写核心测试，运行 `node --test test/core.test.js`：11 项失败，均为对应 API 缺失的断言；原始输出 `red-evidence.txt`。
-2. 实现核心后初轮 9/11 通过。剩余两个断言因 macOS `/var` 与 `/private/var` 的真实路径不同；将 fixture 返回真实路径后保持实路径安全要求。
-3. 在 `src/extension.js` 尚不存在时编写适配层测试，运行 `node --test test/extension.test.js`：5 项失败，均为 `createExtension` 缺失；原始输出 `red-extension-evidence.txt`。
-4. 实现宿主适配后运行 `node --test test/core.test.js test/extension.test.js`：16/16 通过；输出 `green-evidence.txt`。
+Runtime for the initial checkpoints: `node` v24.19.0.
 
-核心测试确实启动短 Node 子进程，并创建真实文件，覆盖顺序、参数中的空格、失败短路、旧波形不能返回、独立波形 URI、非自有文件保留、取消、缺少新波形、路径约束和诊断解析。宿主适配以最小 API 替身验证信任、同项目锁在保存前生效、只保存选中项目、保存失败停止、向导取消与显式顺序、配置符号链接不写入源文件。
+1. Core tests were written before `src/core.js` existed. Running `node --test test/core.test.js` produced 11 failures, each asserting that a required API was missing.
+2. The first core implementation passed 9 of 11 tests. The remaining failures arose from macOS resolving `/var` to `/private/var`. Returning the fixture's real path fixed the tests while preserving the real-path safety requirement.
+3. Adapter tests were written before `src/extension.js` existed. Running `node --test test/extension.test.js` produced five failures because `createExtension` was missing.
+4. After implementing the host adapter, `node --test test/core.test.js test/extension.test.js` passed all 16 tests.
 
-未将自动测试通过等同于真实 VS Code 波形 UI 验收。
+Core tests launch real short-lived Node child processes and create real files. They cover stage order, spaces in arguments, failure short-circuiting, rejection of stale waveforms, unique waveform URIs, preservation of files not owned by the extension, cancellation, missing fresh waveforms, path constraints, and diagnostic parsing. The host adapter uses minimal API substitutes to check workspace trust, acquisition of the project lock before saving, saving only the selected project's files, stopping on save failure, wizard cancellation, explicit compilation order, and rejection of configuration symbolic links that could write into a source file.
 
-5. 自审新增真实 NVC 1.23 `> file.vhd:line` fixture、构建目录源文件别名、工作区外脏文件符号链接测试；运行 `node --test test/*.test.js` 出现 3 个对应断言失败（`red-boundaries-evidence.txt`）。先复现后修正：诊断去掉 `>` 标记，源文件禁止真实路径位于构建目录，保存前检查文件真实路径边界。
-6. 最终 `node --test test/*.test.js`：20/20 通过（`green-evidence.txt`）。参数构造的既有库路径行为另加断言通过，其实现已由阶段顺序和参数测试先行覆盖。
+Passing automated tests was not treated as acceptance of the real VS Code waveform UI.
 
-自审：确认 manifest 版本、官方 Surfer 依赖与 exact viewType；core 没有 shell，输出只有本次独立 FST；构建与配置均拒绝符号链接危险路径；run 的项目锁在保存前同步占用，最终 Promise 等待打开命令。真实 UI 验收由父任务负责。
+5. Self-review added fixtures for actual NVC 1.23 diagnostics of the form `> file.vhd:line`, aliases to source files inside the build directory, and dirty-file symbolic links outside the workspace. Running `node --test test/*.test.js` reproduced three corresponding failures. The fixes removed the `>` diagnostic marker, rejected sources whose real paths point into the build directory, and checked real-path boundaries before saving.
+6. The resulting `node --test test/*.test.js` run passed all 20 tests. An additional assertion for existing library paths in argument construction also passed; the implementation was already covered by earlier stage-order and argument tests.
 
-7. 规格审查提供实际 NVC assertion 输出，新增 `** Failure` 和 `Process/Procedure ... at file:line` 回归 fixture，另使用真实 Node 子进程验证 Warning 不阻止成功返回波形。修复前 3 项失败（`red-runtime-diagnostics-evidence.txt`）：Failure 未识别，调用帧前缀污染路径。
-8. 将 Failure 归类为 error，提取运行时调用帧后的真实路径。最终 `node --test test/*.test.js`：23/23 通过（`green-evidence.txt`）；`node --check src/core.js` 与 `git diff --check` 通过。
+Self-review confirmed the manifest version, official Surfer dependency, and exact viewType. Core execution uses no shell and returns only the current run's unique FST. Build and configuration paths reject unsafe symbolic links. The run lock is acquired synchronously before saving, and the final Promise waits for the editor-opening command. Separate acceptance work covered the real UI.
 
+7. Specification review supplied actual NVC assertion output. Regression fixtures were added for `** Failure` and `Process/Procedure ... at file:line`. A real Node child process also verified that Warning output does not prevent a successful waveform result. Before the fix, three assertions failed: Failure was not recognized and the call-frame prefix polluted the path.
+8. Failure is now classified as an error, and runtime call frames yield the actual source path. `node --test test/*.test.js` then passed all 23 tests. `node --check src/core.js` and `git diff --check` also passed.
 
-## 0.2.0 自动生成输入激励
+## 0.2.0: Generate input stimulus
 
-先添加 testbench/generate 模块与命令的失败测试，再实现；配置在确认期间外部修改的测试先失败，加入内容重检后通过。真实 NVC 初次验证发现中文 report 字符串不兼容，改为 ASCII STIMULUS_DONE 并保留中文注释后通过。
+Failing tests for the testbench/generate modules and command were added before implementation. A test for externally modified configuration during confirmation failed first, then passed after a content recheck was added. Initial validation with real NVC found that a non-ASCII report string was incompatible; an ASCII `STIMULUS_DONE` report fixed the issue while retaining the original source comments at that checkpoint.
 
-真实 NVC 验证生成的计数器时钟、复位、使能和泛型 unsigned/signed/boolean/positive 输入，测试专用断言检查了实际值。用户正常 VS Code 窗口中，对 `Exo1/mux21.vhd` 分别设置 A/B/SEL 时序，生成 `tb_mux21_inputs.vhd`、确认顶层配置后立即点击运行，生成 373 字节 FST。官方 Surfer 显示四个信号的波形；没有输出断言的生成文件显示 STIMULUS_DONE，而不是 TB_PASS。
+Real NVC validated generated counter clocks, resets, and enables, plus generic unsigned/signed/boolean/positive inputs. Test-specific assertions checked actual values. In the user's normal VS Code window, the wizard configured A/B/SEL timing for `Exo1/mux21.vhd`, generated `tb_mux21_inputs.vhd`, confirmed the top-level configuration, and ran immediately. The run produced a 373-byte FST. Official Surfer displayed all four signals. A generated file without output assertions reported `STIMULUS_DONE`, not `TB_PASS`.
 
+## 0.2.2: Separate waveform window
 
-## 0.2.2 独立波形窗口
+Failing waveform-module tests preceded implementation. All 43 tests passed, covering movement of the exact waveform URI, the beside setting, fallback when older VS Code versions lack the window command, and fallback after a window-creation exception. Running Exo1 in the user's normal VS Code opened Surfer's custom editor in Window 2, with Webview parentId=4. The separate window displayed actual tb_a/tb_b/tb_sel/tb_y waveforms while code stayed in the original window. The default setting was `newWindow`.
 
-先添加 waveform 模块的失败测试，再实现。43 项测试通过，覆盖精确波形 URI 的移动、并排设置、旧版本缺少命令的回退、窗口创建异常回退。使用用户正常 VS Code 运行 Exo1 后，Surfer 自定义编辑器出现在“窗口 2”中，Webview parentId=4，独立窗口显示 tb_a/tb_b/tb_sel/tb_y 实际波形，代码留在原窗口。默认配置为 newWindow。
+## 0.3.0: Workflow acceptance (2026-10-13)
 
-## 0.3.0 工作流验收（2026-10-13）
+- `node --test test/*.test.js` passed all 60 tests, including six real persistent NVC session tests, combinational waveforms at time zero, finish/failure behavior, force/noforce, segment-boundary pauses, and existing generator and batch regressions.
+- A real batch NVC run with `--dump-arrays=16` produced VCD signals `memory[0][3:0]` and `memory[1][3:0]`.
+- VS Code and the user's Exo1 project: rerunning replaced the FST in the same auxiliary editor and preserved tb_a, tb_b, tb_sel, and tb_y. Closing and reopening restored those four signals. Selection was also preserved across FST/VCD files.
+- Real GUI interaction: one session advanced to 100ns, forced tb_a=0, showed a waveform change at 200ns, released the force, continued in 10ns segments, and paused at a segment boundary at 1190ns. The buttons became available again. Ending the session removed the persistent process.
+- Independent code review led to fixes for Surfer's saved-state `data` field and the `command_file` bridge. Protocol regression tests passed. Manually opened external waveforms used the official Surfer editor without replacing the project's run record.
+- The experimental interactive patch uses NVC's native waveform dumper. One hundred 5ns segments produced the same event region as one 500ns run. Time-zero init/force/noforce operations did not create artificial time. A rebuild from fresh source using the build script passed.
+- Rendering resources came from installed official Surfer 0.7.1001488. Its custom state interface may change on upgrade; version changes automatically discard old layouts. Interactive segments that are too short to advance time cause an automatic pause. This is not source-code single stepping.
 
-- `node --test test/*.test.js`：60/60，通过；包含6项真实持续 NVC 会话验证、纯组合0时刻波形、finish/failure、force/noforce、段边界暂停，以及原有生成器和批处理回归。
-- 真实批 NVC `--dump-arrays=16`：VCD出现 `memory[0][3:0]`、`memory[1][3:0]`。
-- VS Code / 用户 Exo1：同一辅助编辑器中重跑换FST，tb_a、tb_b、tb_sel、tb_y保持；关闭重新打开恢复四信号；跨FST/VCD也保留选择。
-- 真实GUI交互：同一会话100ns→强制tb_a=0→200ns波形变化→解除强制→按10ns连续运行→1190ns段边界暂停，按钮恢复可用；结束会话删除持续进程。
-- 独立代码审查修复Surfer状态保存字段data及command_file桥接；协议回归测试通过。手动外部波形通过官方Surfer编辑器打开，不替换项目的运行记录。
-- 交互实验补丁使用官方原生wave dumper，100段5ns与一次500ns事件区相同；纯0时刻init/force/noforce不制造假时间；构建脚本全新源码重建通过。
-- Surfer资源由已安装官方0.7.1001488提供；自定义状态接口升级可能变化，版本变化自动丢弃旧布局。交互运行段太短且无时间推进时自动暂停，非源代码单步。
+## 0.3.1: Invalid waveform reference fix (2026-10-14)
 
-## 0.3.1 失效波形引用修复（2026-10-14）
+- Root cause: LoadState restored invalid references as Placeholder entries, and cached Wellen numeric IDs in old RON state belonged to the previous file. An old active_scope containing a cached ID could be incorrectly accepted in a new file.
+- Cached IDs are removed before restoration, allowing full paths to be resolved again. Rebinding active_scope uses an uncached path, and saving calls RemovePlaceholders. User names and comments inside strings are left untouched.
+- Three bridge regressions failed before the fix and passed afterward: invalid references are removed while valid signals/cursors/zoom/formats survive; cached IDs can be transported safely without changing user text; and manual state restoration also removes invalid entries.
+- All 63 tests passed.
+- Acceptance used official Surfer 0.7.1001488's actual WASM and the user's Exo2 FST in a separate browser. Real RON state was injected with five valid signals, one invalid signal, an invalid scope, and old numeric IDs. Restoration, rerunning, and reopening each produced five valid signals and zero placeholders. The real page result was PASS.
+- The user was editing Exo3, so final acceptance did not touch its unsaved files.
 
-- 根因：LoadState 恢复失效引用为 Placeholder，且旧 RON 中的 Wellen 数字编号属于旧文件；带缓存编号的旧 active_scope 可能被新文件错误识别为有效。
-- 恢复前清除缓存编号，由完整路径重新解析；重绑 active_scope 时使用无缓存路径；保存前调用 RemovePlaceholders。字符串中的用户名称与注释不做替换。
-- 三项桥接回归先失败后通过：清理失效引用并保留有效信号/游标/缩放/格式；缓存编号可移植且用户文本保持；手动恢复状态同样清理。
-- 全部63项测试通过。
-- 使用官方 Surfer 0.7.1001488 实际 WASM 和用户 Exo2 FST，独立浏览器中注入真实 RON（5个有效信号、1个失效信号、失效scope及旧数字编号）。恢复、重跑、再次打开三阶段均为5个有效信号、0个占位。真实页面结果 PASS。
-- 用户正在编辑 Exo3，因此最后验收不操作其未保存文件。
+## English edition
+
+The English edition keeps the recorded feature and acceptance boundaries. Translating this document does not rerun those historical acceptance checks. The edition's current automated checks are run separately during packaging and are reported by that task.

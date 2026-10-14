@@ -27,14 +27,14 @@ test('protocol separates normal simulator output from ordered responses and actu
 test('only one command executes at once and closure rejects outstanding work', async () => {
   const session = new InteractiveSession({}); session.child = { stdin: { write: () => {} } };
   const result = session.command('first');
-  await assert.rejects(session.command('second'), /尚未完成/);
+  await assert.rejects(session.command('second'), /not completed/);
   session.terminated(new Error('process exited'));
   await assert.rejects(result, /process exited/);
-  await assert.rejects(session.command('third'), /关闭/);
+  await assert.rejects(session.command('third'), /closed/);
 });
 test('pause stops continuous run at segment boundary and prohibits mutation while continuing', async () => {
   const session = new InteractiveSession({}); let segments = 0;
-  session.advance = async () => { ++segments; await assert.rejects(session.force('/enable', "'1'"), /暂停/); session.pause(); return { now: '5000000' }; };
+  session.advance = async () => { ++segments; await assert.rejects(session.force('/enable', "'1'"), /Pause/); session.pause(); return { now: '5000000' }; };
   assert.deepEqual(await session.continue('6ns'), { now: '5000000' });
   assert.equal(segments, 1); assert.equal(session.busy, false); assert.equal(session.continuing, false);
 });

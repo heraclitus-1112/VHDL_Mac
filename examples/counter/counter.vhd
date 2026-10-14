@@ -2,8 +2,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
--- 被测设计：4 位计数器，范围为 0 到 15。
--- 只在时钟上升沿工作；复位优先于使能。
+-- Design under test: a 4-bit counter with a range of 0 to 15.
+-- Updates on rising clock edges; reset takes priority over enable.
 entity counter is
   port (
     clk   : in  std_logic;

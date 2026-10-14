@@ -66,7 +66,7 @@ window.addEventListener('message', event => {
     const deadline = Date.now() + 30000;
     do {
       await new Promise(resolve => setTimeout(resolve, 80));
-      if (Date.now() > deadline) throw new Error('波形加载超时，请关闭波形窗口后重试。');
+      if (Date.now() > deadline) throw new Error('Waveform loading timed out. Close the waveform window and try again.');
     } while (!document.title.includes(message.name) || !(await waves_loaded()));
     if (message.restore) {
       restoreState(new TextEncoder().encode(message.restore));

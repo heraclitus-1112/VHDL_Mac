@@ -38,9 +38,9 @@ test('reject missing sources, source symlink escape, and build symlink', async t
   assert.equal(typeof core.resolveProject, 'function');
   await assert.rejects(core.resolveProject(root,{...config,sources:['missing.vhd']}));
   await fs.symlink(path.join(outside,'escape.vhd'),path.join(root,'escape.vhd'));
-  await assert.rejects(core.resolveProject(root,{...config,sources:['escape.vhd']}), /workspace|工作区/);
+  await assert.rejects(core.resolveProject(root,{...config,sources:['escape.vhd']}), /workspace/);
   await fs.symlink(outside,path.join(root,'.nvc-build'));
-  await assert.rejects(core.resolveProject(root,config), /build|构建/);
+  await assert.rejects(core.resolveProject(root,config), /build/);
 });
 test('discover VHDL files ignoring generated directories and symlink escapes', async t => {
   const root = await fixture(t); for(const dir of ['.nvc-build','.git','node_modules','build','dist']){await fs.mkdir(path.join(root,dir));await fs.writeFile(path.join(root,dir,'hidden.vhd'),'');} await fs.mkdir(path.join(root,'rtl')); await fs.writeFile(path.join(root,'rtl','UPPER.VHD'),'');
@@ -63,7 +63,7 @@ test('analysis failure stops later stages, rejects this run and preserves last s
   const calls=(await fs.readFile(path.join(root,'calls.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(calls.length,4);assert.equal(await fs.readFile(prior.wavePath,'utf8'),'fresh-wave');
 });
 test('missing new waveform rejects even if an unrelated old waveform exists',async t=>{
-  const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','old.fst'),'old');const opts=await simulator(root,'missing');assert.equal(typeof core.runSimulation,'function');await assert.rejects(core.runSimulation(opts),/波形|wave/);
+  const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','old.fst'),'old');const opts=await simulator(root,'missing');assert.equal(typeof core.runSimulation,'function');await assert.rejects(core.runSimulation(opts),/waveform/);
 });
 test('cancellation terminates the running child and stops further stages',async t=>{
   const root=await fixture(t);const opts=await simulator(root,'slow');assert.equal(typeof core.runSimulation,'function');const controller=new AbortController();let started=false;
@@ -79,7 +79,7 @@ test('parse actual NVC 1.23 arrow location without column',()=>{
   const result=core.parseDiagnostics('** Error: unexpected is while parsing concurrent procedure call statement, expecting one of ( or ;\n   > /project/broken.vhd:8\n   |\n 8 |   this is invalid vhdl;\n   |        ^^ this token was unexpected','/project');
   assert.deepEqual(result,[{filePath:'/project/broken.vhd',line:7,column:0,severity:'error',message:'unexpected is while parsing concurrent procedure call statement, expecting one of ( or ;'}]);
 });
-test('reject source alias into dedicated build directory',async t=>{const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','user.vhd'),'source');await fs.symlink(path.join(root,'.nvc-build','user.vhd'),path.join(root,'alias.vhd'));await assert.rejects(core.resolveProject(root,{...config,sources:['alias.vhd']}),/构建/);});
+test('reject source alias into dedicated build directory',async t=>{const root=await fixture(t);await fs.mkdir(path.join(root,'.nvc-build'));await fs.writeFile(path.join(root,'.nvc-build','user.vhd'),'source');await fs.symlink(path.join(root,'.nvc-build','user.vhd'),path.join(root,'alias.vhd'));await assert.rejects(core.resolveProject(root,{...config,sources:['alias.vhd']}),/build/);});
 test('all three stages have identical library paths and declared stop time',()=>{const args=core.buildStageArgs({sources:['/p/a.vhd'],top:'tb',standard:'1993',stopTime:'2ms',libraryPaths:['/lib with spaces']},'/p/.nvc-build','/p/.nvc-build/new.fst');for(const stage of args){assert.deepEqual(stage.args.slice(0,4),['--std=1993','--work=work:/p/.nvc-build/work','-L','/lib with spaces']);}assert.ok(args[2].args.includes('--stop-time=2ms'));});
 test('runtime assertion failure maps process frame to source Problems',()=>{
   const diagnostics=core.parseDiagnostics('** Failure: 1ns+0: SPEC_RUNTIME_FAILURE\n   Process :tb_fail:_p0 at /project/tb_fail.vhd:1','/project');

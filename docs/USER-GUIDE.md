@@ -1,0 +1,41 @@
+# Run VHDL simulations in VS Code
+
+Follow the [README installation instructions](../README.md). Install NVC, the English NVC Runner extension, and the official Surfer extension, then open `examples/counter`.
+
+Since 0.2.2, successful simulations open Surfer waveforms in a separate VS Code window by default. For a view beside the code, search VS Code settings for `nvcRunner.waveformWindow` and select `beside`.
+
+## Generate a testbench (0.2.0)
+
+Open the design under test (`counter.vhd` in the example), press `⌘⇧P`, and run **NVC: Generate Testbench**. The wizard lets you configure each input port as a constant, timed changes, or a periodic clock. A timed sequence might be `0ns=0;20ns=1;100ns=0`; a vector value might be `x"A5"`. For a clock, set the initial value, start time, and full period.
+
+Review the preview and name the new testbench file. Existing files are never overwritten. Choose **Set as Simulation Top**, confirm compilation order and the time limit, then click ▶. The generator provides input stimulus. Add `assert` statements for functional checks; without checks, it reports only `STIMULUS_DONE`.
+
+For the counter, use an end time of 300ns; clk with initial value 0, start 0ns, and period 10ns; rst changes `0ns=1;20ns=0`; en changes `0ns=0;20ns=1;100ns=0;130ns=1`; and the new file name `tb_counter_inputs`.
+
+## Set up your own project
+
+1. Use **File → Open Folder** in VS Code to open the project folder containing your VHDL files, and trust the local project.
+2. Write a design file such as `counter.vhd` and a testbench such as `tb_counter.vhd`. Put clocks, resets, input changes, and checks in the testbench. NVC/Surfer does not provide a ModelSim-style window for drawing input stimulus directly.
+3. Open the Command Palette (`⌘⇧P`) and run **NVC: Configure VHDL Simulation**. Select the source files, order them by dependency, and enter the top-level testbench entity, VHDL standard, and stop time. The extension saves `vhdl.sim.json`; you can also edit the JSON directly.
+
+## Run the simulation
+
+Open any `.vhd` or `.vhdl` file and click **▶ NVC: Run VHDL Simulation** in the top-right corner, or click **NVC Simulation** in the status bar. The extension saves unsaved files in the selected project, then analyzes, elaborates, and runs the testbench. It creates a fresh FST and opens Surfer in a separate VS Code waveform window after a successful run.
+
+In Surfer, expand a scope such as `tb_counter` on the left and select an instance. Click signal names under Variables to add them to the waveform on the right. Enlarge the editor group if needed. The example signals include `clk`, `rst`, `en`, and `count[3:0]`.
+
+Simulation output appears under **Output → NVC Simulation**. NVC errors with identifiable source locations appear in the **Problems** panel. A failed run does not update the waveform: the window keeps the previous successful result. Stop a run with **Cancel** in its progress notification or **NVC: Cancel VHDL Simulation**.
+
+In `vhdl.sim.json`, `sources` defines compilation order, `top` names the testbench entity, and `stopTime` sets a duration such as `1us`. If a third party or instructor supplies precompiled libraries in a dedicated directory, add that directory to `libraryPaths`. The extension does not compile those libraries automatically. Vendor-specific libraries unsupported by NVC may still require the course's prescribed ModelSim/Questa environment.
+
+## Run segments and temporarily change inputs (0.3.0)
+
+Press `⌘⇧P` and run **NVC: Start Interactive Simulation**. It compiles the current configuration and runs an initial 100ns, then shows controls above the waveform. Click **Run segment** and enter a duration such as `100ns`. Repeated segments preserve the circuit's internal state. Click **Continue** to keep running segments of that duration, and **Pause** to pause at the end of the current segment.
+
+While paused, click **Force input**, select a signal such as `/tb_a`, and enter `'0'`, `'1'`, or a width-matched value such as `"0101"`. Run another segment to observe the circuit response. Click **Release force**, then run again to restore the original drivers. **Read signal** displays the current value.
+
+After editing code, click **End session** before starting a new interactive session or using the normal ▶ button. Restart after the testbench reaches `finish` / `stop` as well; Continue does not bypass either operation. Pauses occur at segment boundaries, so longer segments can mean a longer wait for a pause. You can still force combinational inputs when actual simulation time has not advanced.
+
+Batch and interactive simulations share the project's waveform window. Rerunning preserves signal selection and layout; closing and reopening restores them too. Disable `nvcRunner.preserveWaveformLayout` if you want to select the signals again.
+
+Before using interactive mode on a new Mac, follow the README and run `bash tools/build-nvc-interactive.sh --install-deps`. Ordinary Homebrew NVC does not include this experimental snapshot patch. The current interactive controls support learning and basic functional simulation. They do not provide ModelSim's source-code breakpoints, single stepping, or vendor-library integration.

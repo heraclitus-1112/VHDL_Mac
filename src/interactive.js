@@ -7,14 +7,14 @@ const { resolveProject } = require('./core');
 
 function durationParts(duration) {
   const match = typeof duration === 'string' && duration.match(/^([1-9][0-9]*)(fs|ps|ns|us|ms|sec)$/);
-  if (!match) throw new Error('运行时长必须是正整数加单位，例如 100ns 或 1us。');
+  if (!match) throw new Error('Run duration must be a positive integer followed by a unit, for example 100ns or 1us.');
   return [match[1], match[2]];
 }
 function quoteTcl(value) {
-  if (typeof value !== 'string' || value.includes('\0')) throw new Error('信号路径和值必须是有效文本。');
+  if (typeof value !== 'string' || value.includes('\0')) throw new Error('Signal paths and values must be valid text.');
   return `[encoding convertfrom utf-8 [binary decode base64 {${Buffer.from(value).toString('base64')}}]]`;
 }
-function aborted() { const error = new Error('交互会话启动已取消。'); error.name = 'AbortError'; return error; }
+function aborted() { const error = new Error('Interactive session startup cancelled.'); error.name = 'AbortError'; return error; }
 function stage(executable, args, cwd, onOutput, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(aborted()); return; }
@@ -30,7 +30,7 @@ function stage(executable, args, cwd, onOutput, signal) {
       cleanup();
       if (signal?.aborted) reject(aborted());
       else if (code === 0) resolve();
-      else { const error = new Error(`交互仿真编译失败，NVC 退出码 ${code}。`); error.output = output; reject(error); }
+      else { const error = new Error(`Interactive simulation compilation failed; NVC exited with code ${code}.`); error.output = output; reject(error); }
     });
     if (signal?.aborted) cancel();
   });
@@ -57,7 +57,7 @@ class InteractiveSession {
     try {
       let readyTimer;
       try {
-        await Promise.race([session.ready, new Promise((_, reject) => { readyTimer = setTimeout(() => reject(new Error('NVC 未启动 Tcl 交互接口。请检查交互版 NVC 路径。')), 10000); })]);
+        await Promise.race([session.ready, new Promise((_, reject) => { readyTimer = setTimeout(() => reject(new Error('NVC did not start its Tcl interface. Check the interactive NVC executable path.')), 10000); })]);
       } finally { clearTimeout(readyTimer); }
       session.waveSupported = (await session.command('expr {[llength [info commands wave]] > 0}')) === '1';
       session.statusSupported = (await session.command('expr {[llength [info commands simstatus]] > 0}')) === '1';
@@ -84,7 +84,7 @@ class InteractiveSession {
     });
     this.child.once('error', error => this.terminated(error));
     this.child.once('close', (code, signal) => {
-      const message = this.closed ? '交互会话已关闭。' : `交互会话已结束（${code ?? signal}）。`;
+      const message = this.closed ? 'The interactive session is closed.' : `The interactive session ended (${code ?? signal}).`;
       this.terminated(this.failure ?? new Error(message));
       this.onExit?.({ code, signal, intentional: this.intentionalClose });
     });
@@ -92,7 +92,7 @@ class InteractiveSession {
   reportOutput(text) {
     this.onOutput?.(text); this.stderrTail = (this.stderrTail + text).slice(-16384);
     if (/\*\*\s*(?:Failure|Fatal|Error):/i.test(this.stderrTail)) {
-      this.finished = true; this.failure = new Error('NVC 报告仿真错误。请查看输出与问题面板。');
+      this.finished = true; this.failure = new Error('NVC reported a simulation error. Check the output and the Problems panel.');
     } else if (/\b(?:FINISH|STOP) called\b/.test(this.stderrTail)) this.finished = true;
   }
   acceptOutput(text) {
@@ -116,8 +116,8 @@ class InteractiveSession {
     const pending = this.pending; this.pending = undefined; pending?.reject(error);
   }
   command(script) {
-    if (this.closed) return Promise.reject(new Error('交互会话已关闭。请重新启动。'));
-    if (this.pending) return Promise.reject(new Error('当前指令尚未完成。'));
+    if (this.closed) return Promise.reject(new Error('The interactive session is closed. Start a new session.'));
+    if (this.pending) return Promise.reject(new Error('The current command has not completed.'));
     return new Promise((resolve, reject) => {
       this.pending = { resolve, reject };
       this.child.stdin.write(Buffer.from(script).toString('base64') + '\n', error => {
@@ -126,11 +126,11 @@ class InteractiveSession {
     });
   }
   checkIdle() {
-    if (this.closed) throw new Error('交互会话已关闭。请重新启动。');
-    if (this.busy || this.continuing) throw new Error('会话正在运行。请先暂停；暂停在当前分段结束时生效。');
+    if (this.closed) throw new Error('The interactive session is closed. Start a new session.');
+    if (this.busy || this.continuing) throw new Error('The session is running. Pause it first; pausing takes effect at the end of the current segment.');
   }
   async advance(duration) {
-    if (this.finished) throw this.failure ?? new Error('测试平台已经 finish/stop，不能继续推进。请重新启动会话。');
+    if (this.finished) throw this.failure ?? new Error('The testbench has called finish/stop and cannot advance further. Start a new session.');
     const [amount, unit] = durationParts(duration); const before = this.now;
     await this.command(`run ${amount} ${unit}`);
     // stderr may be delivered in the next I/O callback after the command reply.
@@ -138,7 +138,7 @@ class InteractiveSession {
     if (this.statusSupported) {
       const fields = (await this.command('set s [simstatus]; list [dict get $s stopped] [dict get $s pending] [dict get $s exitStatus] [dict get $s nextTime]')).split(/\s+/);
       this.finished = this.finished || fields[0] === '1'; this.pendingEvents = fields[1] === '1'; this.nextTime = fields[3];
-      if (fields[2] !== '0') { this.finished = true; this.failure ??= new Error(`NVC 仿真错误，退出状态 ${fields[2]}。请查看输出与问题面板。`); }
+      if (fields[2] !== '0') { this.finished = true; this.failure ??= new Error(`NVC simulation error, exit status ${fields[2]}. Check the output and the Problems panel.`); }
     }
     if (this.wavePath) {
       const wavePath = path.join(this.buildDir, `segment-${randomUUID()}.vcd`);
@@ -188,8 +188,8 @@ class InteractiveSession {
   async release(signal) { this.checkIdle(); return this.command(`noforce ${quoteTcl(signal)}`); }
   close() {
     if (this.closed) return;
-    this.closed = true; this.intentionalClose = true; this.pauseRequested = true; this.readyReject(new Error('交互会话已关闭。'));
-    this.pending?.reject(new Error('交互会话已关闭。')); this.pending = undefined;
+    this.closed = true; this.intentionalClose = true; this.pauseRequested = true; this.readyReject(new Error('The interactive session is closed.'));
+    this.pending?.reject(new Error('The interactive session is closed.')); this.pending = undefined;
     this.child?.stdin.end(); this.child?.kill('SIGTERM');
     const timer = setTimeout(() => this.child?.kill('SIGKILL'), 1500); timer.unref();
     this.child?.once('close', () => clearTimeout(timer));

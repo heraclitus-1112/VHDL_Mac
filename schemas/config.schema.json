@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "VHDL NVC 仿真配置",
+  "title": "VHDL NVC Simulation Configuration",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,7 +9,7 @@
   ],
   "properties": {
     "sources": {
-      "description": "工作区相对源文件，按编译顺序排列；设计依赖在前，测试平台在后。",
+      "description": "Source files relative to the workspace, listed in compilation order. Place design dependencies first and the testbench last.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
@@ -20,7 +20,7 @@
       }
     },
     "top": {
-      "description": "顶层测试平台基本实体名称。",
+      "description": "Basic entity name of the top-level testbench.",
       "type": "string",
       "pattern": "^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"
     },
@@ -39,7 +39,7 @@
       "default": "1us"
     },
     "libraryPaths": {
-      "description": "已有编译库的搜索目录，可以是工作区相对路径或绝对路径。",
+      "description": "Search directories for existing compiled libraries, specified as workspace-relative or absolute paths.",
       "type": "array",
       "items": {
         "type": "string",
@@ -52,7 +52,7 @@
       "minimum": 0,
       "maximum": 1000000,
       "default": 0,
-      "description": "将最多包含该数量元素的嵌套数组写入波形；0关闭。较大的值增加内存和波形文件大小。"
+      "description": "Write nested arrays with up to this many elements to the waveform. Set to 0 to disable. Higher values increase memory use and waveform file size."
     }
   }
 }

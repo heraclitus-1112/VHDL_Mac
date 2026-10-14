@@ -13,11 +13,11 @@ class SurferViewer {
   stateKey(root) { return `surfer-layout:${root}`; }
   async show({ projectDir, wavePath }, mode = 'newWindow', preserve = true) {
     const root = await fs.realpath(projectDir), build = path.join(root, '.nvc-build');
-    if (await fs.realpath(build) !== build) throw new Error('波形目录不能是符号链接。');
+    if (await fs.realpath(build) !== build) throw new Error('The waveform directory must not be a symbolic link.');
     const wave = await fs.realpath(wavePath);
-    if (!within(build, wave) || !(await fs.stat(wave)).isFile()) throw new Error('波形必须是当前项目构建目录内的文件。');
+    if (!within(build, wave) || !(await fs.stat(wave)).isFile()) throw new Error('The waveform must be a file inside the current project build directory.');
     const marker = path.join(build, 'waveform.nvcwave');
-    try { const info = await fs.lstat(marker); if (info.isSymbolicLink() || !info.isFile()) throw new Error('波形窗口记录不能是符号链接或目录。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { const info = await fs.lstat(marker); if (info.isSymbolicLink() || !info.isFile()) throw new Error('The waveform viewer record must not be a symbolic link or directory.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
     try { await fs.writeFile(temporary, JSON.stringify({ wave: path.relative(build, wave), preserve }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
     const old = this.entries.get(marker);
@@ -29,25 +29,25 @@ class SurferViewer {
     }
     const uri = this.vscode.Uri.file(marker);
     let separate = mode !== 'beside';
-    if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('当前 VS Code 不支持独立编辑器窗口，已并排显示。'); separate = false; }
+    if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('This version of VS Code does not support separate editor windows. The waveform is shown beside the code.'); separate = false; }
     await this.vscode.commands.executeCommand('vscode.openWith', uri, viewType, { viewColumn: separate ? this.vscode.ViewColumn.Active : this.vscode.ViewColumn.Beside, preview: false });
-    if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`独立窗口打开失败：${error.message}`); }
+    if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`Could not open a separate window: ${error.message}`); }
   }
   async resolveCustomEditor(document, panel) {
     const marker = document.uri.fsPath, root = path.dirname(path.dirname(marker));
     const info = await fs.lstat(marker);
-    if (info.isSymbolicLink() || path.basename(marker) !== 'waveform.nvcwave') throw new Error('无效的波形窗口记录。');
+    if (info.isSymbolicLink() || path.basename(marker) !== 'waveform.nvcwave') throw new Error('Invalid waveform viewer record.');
     const data = JSON.parse(await fs.readFile(marker, 'utf8'));
-    if (typeof data.wave !== 'string' || path.isAbsolute(data.wave) || data.wave.split(/[\\/]/).includes('..') || !/\.(fst|vcd)$/i.test(data.wave)) throw new Error('无效的波形文件名。');
+    if (typeof data.wave !== 'string' || path.isAbsolute(data.wave) || data.wave.split(/[\\/]/).includes('..') || !/\.(fst|vcd)$/i.test(data.wave)) throw new Error('Invalid waveform filename.');
     const wave = await fs.realpath(path.join(path.dirname(marker), data.wave));
-    if (!within(path.dirname(marker), wave)) throw new Error('波形实际路径超出项目构建目录。');
+    if (!within(path.dirname(marker), wave)) throw new Error('The resolved waveform path is outside the project build directory.');
     const surfer = this.vscode.extensions.getExtension('surfer-project.surfer');
-    if (!surfer) throw new Error('请安装官方 Surfer 扩展。');
+    if (!surfer) throw new Error('Install the official Surfer extension.');
     const assets = path.join(surfer.extensionUri.fsPath, 'surfer');
     const js = await fs.readFile(path.join(assets, 'surfer.js'), 'utf8');
-    if (js && (!js.includes('function get_state') || !js.includes('function waves_loaded'))) throw new Error('当前 Surfer 版本不支持保留视图接口，请改用官方 Surfer 打开波形。');
+    if (js && (!js.includes('function get_state') || !js.includes('function waves_loaded'))) throw new Error('This version of Surfer does not support the view preservation interface. Open the waveform with the official Surfer viewer.');
     const entry = { panel, marker, root, wave, version: surfer.packageJSON.version, preserve: data.preserve !== false, ready: false, loaded: false };
-    this.entries.set(marker, entry); panel.title = `波形 · ${path.basename(root)}`;
+    this.entries.set(marker, entry); panel.title = `Waveform · ${path.basename(root)}`;
     panel.webview.options = { enableScripts: true, localResourceRoots: [this.vscode.Uri.file(assets), this.vscode.Uri.file(path.dirname(marker))] };
     panel.webview.onDidReceiveMessage(async message => {
       try {
@@ -57,12 +57,12 @@ class SurferViewer {
         else if (message.command === 'state' && typeof message.state === 'string' && Buffer.byteLength(message.state) <= 8 * 1024 * 1024) {
           await this.context.workspaceState?.update(this.stateKey(root), { version: entry.version, state: message.state });
           this.pending.get(message.id)?.();
-        } else if (message.command === 'error') this.warning(`Surfer：${String(message.message).slice(0, 2000)}`);
+        } else if (message.command === 'error') this.warning(`Surfer: ${String(message.message).slice(0, 2000)}`);
         else if (message.command === 'vscodeSaveStateFromWasm' && typeof message.data === 'string') {
           const target = await this.vscode.window.showSaveDialog({ defaultUri: this.vscode.Uri.file(path.join(root, 'waveform.ron')) });
           if (target) await this.vscode.workspace.fs.writeFile(target, Buffer.from(message.data));
         } else if (message.command === 'open-dialog') {
-          const filters = message.kind === 'command_file' ? { 'Surfer 命令': ['sucl'] } : message.kind === 'state_file' ? { 'Surfer 状态': ['ron'] } : { '波形': ['fst','vcd'] };
+          const filters = message.kind === 'command_file' ? { 'Surfer commands': ['sucl'] } : message.kind === 'state_file' ? { 'Surfer state': ['ron'] } : { 'Waveform': ['fst','vcd'] };
           const files = await this.vscode.window.showOpenDialog({ canSelectMany: false, filters });
           if (files?.[0]) {
             if (['command_file','state_file'].includes(message.kind)) await panel.webview.postMessage({ command: 'open-data', kind: message.kind, bytes: Array.from(await this.vscode.workspace.fs.readFile(files[0])) });
@@ -79,7 +79,7 @@ class SurferViewer {
   async load(entry) {
     const stored = this.context.workspaceState?.get(this.stateKey(entry.root));
     const restore = !entry.loaded && entry.preserve && stored?.version === entry.version ? stored.state : undefined;
-    if (!entry.loaded && stored && stored.version !== entry.version) this.warning('Surfer 版本已变化，本次重新建立波形布局。');
+    if (!entry.loaded && stored && stored.version !== entry.version) this.warning('The Surfer version has changed. The waveform layout will be reset.');
     const keep = entry.loaded && entry.preserve;
     entry.loaded = false;
     entry.loadId = randomUUID();
@@ -97,7 +97,7 @@ class SurferViewer {
       if (!entry || entry.loaded) return;
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    throw new Error('波形显示超时，交互运行已暂停。请检查 Surfer 窗口。');
+    throw new Error('Waveform display timed out. The interactive run has been paused. Check the Surfer window.');
   }
   async snapshot(entry) {
     const id = randomUUID();
@@ -109,7 +109,7 @@ class SurferViewer {
   }
   async html(js, wasm) {
     const bridge = await fs.readFile(path.join(__dirname, '../media/viewer.js'), 'utf8');
-    return `<!doctype html><html><head><meta charset="utf-8"><title>Surfer</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#404040}canvas{position:absolute;inset:0;width:100%;height:100%}body.interactive canvas{top:42px;height:calc(100% - 42px)}#controls{display:none;position:absolute;top:0;left:0;right:0;height:42px;align-items:center;gap:6px;padding:0 8px;color:var(--vscode-editor-foreground);background:var(--vscode-editor-background);font:12px sans-serif}body.interactive #controls{display:flex}button{color:var(--vscode-button-foreground);background:var(--vscode-button-background);border:0;padding:5px 8px;cursor:pointer}#error_container{position:absolute;inset:0;padding:20px;color:white;background:#300;display:none;overflow:auto;white-space:pre-wrap}</style></head><body><div id="controls"><span id="time"></span><button data-action="step">运行一段</button><button data-action="continue">继续</button><button data-action="pause">暂停</button><button data-action="force">强制输入</button><button data-action="release">解除强制</button><button data-action="inspect">读信号</button><button data-action="stop">结束会话</button></div><canvas id="the_canvas_id"></canvas><div id="loading_text" style="display:none"></div><div id="error_container"><pre id="error_message"></pre></div><script type="module">import init, {inject_message,get_state,waves_loaded} from ${JSON.stringify(js)};const wasm=${JSON.stringify(wasm)};${bridge}</script></body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Surfer</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#404040}canvas{position:absolute;inset:0;width:100%;height:100%}body.interactive canvas{top:42px;height:calc(100% - 42px)}#controls{display:none;position:absolute;top:0;left:0;right:0;height:42px;align-items:center;gap:6px;padding:0 8px;color:var(--vscode-editor-foreground);background:var(--vscode-editor-background);font:12px sans-serif}body.interactive #controls{display:flex}button{color:var(--vscode-button-foreground);background:var(--vscode-button-background);border:0;padding:5px 8px;cursor:pointer}#error_container{position:absolute;inset:0;padding:20px;color:white;background:#300;display:none;overflow:auto;white-space:pre-wrap}</style></head><body><div id="controls"><span id="time"></span><button data-action="step">Run segment</button><button data-action="continue">Continue</button><button data-action="pause">Pause</button><button data-action="force">Force input</button><button data-action="release">Release force</button><button data-action="inspect">Read signal</button><button data-action="stop">End session</button></div><canvas id="the_canvas_id"></canvas><div id="loading_text" style="display:none"></div><div id="error_container"><pre id="error_message"></pre></div><script type="module">import init, {inject_message,get_state,waves_loaded} from ${JSON.stringify(js)};const wasm=${JSON.stringify(wasm)};${bridge}</script></body></html>`;
   }
   dispose() { for (const resolve of this.pending.values()) resolve(); this.pending.clear(); }
 }

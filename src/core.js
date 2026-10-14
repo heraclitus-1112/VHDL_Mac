@@ -8,29 +8,29 @@ const { randomUUID } = require('node:crypto');
 const IGNORED = new Set(['.nvc-build', '.git', 'node_modules', 'build', 'dist', 'out', '.vscode-test']);
 function within(root, target) { const relative = path.relative(root, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); }
 function validateConfig(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('vhdl.sim.json 必须是 JSON 对象。');
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('vhdl.sim.json must be a JSON object.');
   const allowed = new Set(['sources', 'top', 'standard', 'stopTime', 'libraryPaths', 'dumpArrays']);
-  for (const key of Object.keys(data)) if (!allowed.has(key)) throw new Error(`未知配置字段：${key}`);
-  if (!Array.isArray(data.sources) || !data.sources.length) throw new Error('sources 必须包含按编译顺序排列的 VHDL 文件。');
+  for (const key of Object.keys(data)) if (!allowed.has(key)) throw new Error(`Unknown configuration field: ${key}`);
+  if (!Array.isArray(data.sources) || !data.sources.length) throw new Error('sources must contain VHDL files in compilation order.');
   for (const source of data.sources) {
-    if (typeof source !== 'string' || !source || path.isAbsolute(source) || source.split(/[\\/]/).includes('..') || !/\.vhdl?$/i.test(source) || source.includes('\0')) throw new Error(`无效的工作区相对源文件：${source}`);
-    if (source.split(/[\\/]/).some(part => IGNORED.has(part))) throw new Error('源文件不能位于生成目录。');
+    if (typeof source !== 'string' || !source || path.isAbsolute(source) || source.split(/[\\/]/).includes('..') || !/\.vhdl?$/i.test(source) || source.includes('\0')) throw new Error(`Invalid workspace-relative source file: ${source}`);
+    if (source.split(/[\\/]/).some(part => IGNORED.has(part))) throw new Error('Source files cannot be in generated directories.');
   }
-  if (new Set(data.sources).size !== data.sources.length) throw new Error('sources 不能重复。');
-  if (typeof data.top !== 'string' || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(data.top)) throw new Error('top 必须是有效的 VHDL 基本实体名称。');
+  if (new Set(data.sources).size !== data.sources.length) throw new Error('sources must not contain duplicates.');
+  if (typeof data.top !== 'string' || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(data.top)) throw new Error('top must be a valid VHDL basic entity name.');
   const standard = data.standard ?? '2008';
-  if (!['1993', '2002', '2008'].includes(standard)) throw new Error('standard 只能是 1993、2002 或 2008。');
+  if (!['1993', '2002', '2008'].includes(standard)) throw new Error('standard must be 1993, 2002, or 2008.');
   const stopTime = data.stopTime ?? '1us';
-  if (typeof stopTime !== 'string' || !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime)) throw new Error('stopTime 必须是正整数加单位 fs/ps/ns/us/ms/sec，例如 1us。');
+  if (typeof stopTime !== 'string' || !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime)) throw new Error('stopTime must be a positive integer followed by fs/ps/ns/us/ms/sec, for example 1us.');
   const libraryPaths = data.libraryPaths ?? [];
-  if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths 必须是有效目录路径数组。');
-  if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays 必须是 0 到 1000000 的整数，0 表示关闭。');
+  if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths must be an array of valid directory paths.');
+  if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays must be an integer from 0 to 1000000; 0 disables array dumping.');
   return { sources: [...data.sources], top: data.top, standard, stopTime, libraryPaths: [...libraryPaths], ...(data.dumpArrays === undefined ? {} : { dumpArrays: data.dumpArrays }) };
 }
 async function safeDirectory(root, directory) {
   try {
     const info = await fs.lstat(directory);
-    if (info.isSymbolicLink() || !info.isDirectory() || !within(root, await fs.realpath(directory))) throw new Error('构建目录必须是工作区内的真实目录，不能是符号链接。');
+    if (info.isSymbolicLink() || !info.isDirectory() || !within(root, await fs.realpath(directory))) throw new Error('The build directory must be a real directory within the workspace, not a symbolic link.');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 async function resolveProject(projectDir, data) {
@@ -39,16 +39,16 @@ async function resolveProject(projectDir, data) {
   const sources = [];
   for (const source of config.sources) {
     const real = await fs.realpath(path.resolve(root, source));
-    if (!within(root, real)) throw new Error(`源文件超出工作区：${source}`);
-    if (within(path.join(root, '.nvc-build'), real)) throw new Error('源文件不能位于专用构建目录。');
-    if (!(await fs.stat(real)).isFile()) throw new Error(`源文件不是普通文件：${source}`);
-    if (sources.includes(real)) throw new Error(`源文件重复指向同一文件：${source}`);
+    if (!within(root, real)) throw new Error(`Source file is outside the workspace: ${source}`);
+    if (within(path.join(root, '.nvc-build'), real)) throw new Error('Source files cannot be in the dedicated build directory.');
+    if (!(await fs.stat(real)).isFile()) throw new Error(`Source file is not a regular file: ${source}`);
+    if (sources.includes(real)) throw new Error(`Multiple source entries refer to the same file: ${source}`);
     sources.push(real);
   }
   const libraryPaths = [];
   for (const directory of config.libraryPaths) {
     const real = await fs.realpath(path.resolve(root, directory));
-    if (!(await fs.stat(real)).isDirectory()) throw new Error(`库路径不是目录：${directory}`);
+    if (!(await fs.stat(real)).isDirectory()) throw new Error(`Library path is not a directory: ${directory}`);
     libraryPaths.push(real);
   }
   const buildDir = path.join(root, '.nvc-build');
@@ -75,7 +75,7 @@ function buildStageArgs(config, buildDir, wavePath) {
     { stage: 'simulation', args: [...common, '-r', config.top, `--stop-time=${config.stopTime}`, `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
   ];
 }
-function abortError() { const error = new Error('仿真已取消。'); error.name = 'AbortError'; return error; }
+function abortError() { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; return error; }
 function executeStage(executable, args, cwd, signal, onOutput) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(abortError());
@@ -88,7 +88,7 @@ function executeStage(executable, args, cwd, signal, onOutput) {
     child.once('close', (code, terminatedBy) => {
       signal?.removeEventListener('abort', cancel); clearTimeout(timer);
       if (signal?.aborted) { const error = abortError(); error.output = output; reject(error); }
-      else if (code !== 0) { const error = new Error(`NVC 退出码 ${code ?? terminatedBy}。请查看“NVC 仿真”输出与问题面板。`); error.output = output; error.exitCode = code; reject(error); }
+      else if (code !== 0) { const error = new Error(`NVC exited with code ${code ?? terminatedBy}. Check the "NVC Simulation" output channel and the Problems panel.`); error.output = output; error.exitCode = code; reject(error); }
       else resolve(output);
     });
     if (signal?.aborted) cancel();
@@ -97,7 +97,7 @@ function executeStage(executable, args, cwd, signal, onOutput) {
 async function cleanOwnedWave(buildDir) {
   const marker = path.join(buildDir, '.nvc-runner.json');
   try {
-    if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('构建记录不能是符号链接。');
+    if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('The build record cannot be a symbolic link.');
     const previous = JSON.parse(await fs.readFile(marker, 'utf8'));
     if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) await fs.unlink(path.join(buildDir, previous.wave)).catch(error => { if (error.code !== 'ENOENT') throw error; });
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -108,7 +108,7 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   await fs.mkdir(resolved.buildDir, { recursive: true });
   const wavePath = path.join(resolved.buildDir, `nvc-runner-${randomUUID()}.fst`);
   const marker = path.join(resolved.buildDir, '.nvc-runner.json');
-  try { if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('构建记录不能是符号链接。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('The build record cannot be a symbolic link.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let output = '';
   for (const { stage, args } of buildStageArgs(resolved, resolved.buildDir, wavePath)) {
     if (signal?.aborted) throw abortError();
@@ -117,8 +117,8 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
     catch (error) { error.stage = stage; error.output = output + (error.output ?? ''); throw error; }
   }
   if (signal?.aborted) throw abortError();
-  let stat; try { stat = await fs.lstat(wavePath); } catch { throw new Error('NVC 未生成本次运行的新波形。请检查测试平台与 NVC 输出。'); }
-  if (!stat.isFile() || stat.size === 0) throw new Error('本次波形为空或不是普通文件。请检查测试平台与 NVC 输出。');
+  let stat; try { stat = await fs.lstat(wavePath); } catch { throw new Error('NVC did not generate a new waveform for this run. Check the testbench and NVC output.'); }
+  if (!stat.isFile() || stat.size === 0) throw new Error('The waveform for this run is empty or is not a regular file. Check the testbench and NVC output.');
   // Keep the last successful result accessible when analysis or simulation fails.
   await cleanOwnedWave(resolved.buildDir);
   const temporary = path.join(resolved.buildDir, `.result-${randomUUID()}.tmp`);
@@ -147,6 +147,6 @@ async function resolveNvc(override, environment = process.env) {
   for (const candidate of candidates) {
     try { const real = await fs.realpath(candidate); const info = await fs.stat(real); if (info.isFile()) { await fs.access(real, constants.X_OK); return real; } } catch { /* Try the next executable. */ }
   }
-  throw new Error('找不到 NVC。请先安装 NVC，或在设置 nvcRunner.nvcPath 填入其可执行文件完整路径。');
+  throw new Error('NVC was not found. Install NVC or set nvcRunner.nvcPath to the full path of its executable.');
 }
 module.exports = { validateConfig, resolveProject, discoverSources, buildStageArgs, runSimulation, parseDiagnostics, resolveNvc, within };

@@ -3,7 +3,7 @@ const moveCommand = 'workbench.action.moveEditorToNewWindow';
 async function openWaveform(vscode, uri, mode, onWarning) {
   let separate = mode !== 'beside';
   if (separate && !(await vscode.commands.getCommands(true)).includes(moveCommand)) {
-    onWarning('当前 VS Code 不支持独立编辑器窗口，已在旁边打开波形。');
+    onWarning('This version of VS Code does not support separate editor windows. The waveform has been opened beside the code.');
     separate = false;
   }
   const open = column => vscode.commands.executeCommand('vscode.openWith', uri, 'surfer.waveformViewer', { viewColumn: column, preserveFocus: false, preview: false });
@@ -11,7 +11,7 @@ async function openWaveform(vscode, uri, mode, onWarning) {
   if (separate) {
     try { await vscode.commands.executeCommand(moveCommand, uri); }
     catch (error) {
-      onWarning(`独立波形窗口未能打开，已改为并排显示：${error.message}`);
+      onWarning(`Could not open a separate waveform window. The waveform is shown beside the code: ${error.message}`);
       await open(vscode.ViewColumn.Beside);
     }
   }

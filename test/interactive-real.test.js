@@ -114,7 +114,7 @@ test('real testbench finish prevents misleading further progress', { timeout: 20
     const result = await session.run('20ns'); assert.equal(result.now, '12000000');
     // NVC can return from run normally after finish rather than exiting.
     assert.equal(result.finished, true);
-    await assert.rejects(session.run('20ns'), /finish\/stop|关闭/);
+    await assert.rejects(session.run('20ns'), /finish\/stop|closed/);
   } finally { session?.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -124,7 +124,7 @@ test('real assertion failure is reported despite Tcl run returning normally', { 
   try {
     await fs.writeFile(path.join(root, 'probe.vhd'), source.replace(' clk <= not clk after 5 ns;', ' clk <= not clk after 5 ns;\n process begin wait for 12 ns; assert false report "EXPECTED_FAILURE" severity failure; wait; end process;'));
     session = await InteractiveSession.start({ executable, projectDir: root, config: { sources: ['probe.vhd'], top: 'probe' } });
-    await assert.rejects(session.run('20ns'), /仿真错误/);
+    await assert.rejects(session.run('20ns'), /simulation error/);
     assert.equal(session.finished, true);
   } finally { session?.close(); await fs.rm(root, { recursive: true, force: true }); }
 });

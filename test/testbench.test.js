@@ -20,9 +20,9 @@ test('validate values by type, signedness and range',()=>{
  const m=tb.instantiateEntity(tb.parseEntities(source)[0],{WIDTH:'4'});
  assert.equal(tb.formatValue(m.ports[2],'x"A"'),'"1010"');
  assert.equal(tb.formatValue(m.ports[3],'true'),'true');
- assert.throws(()=>tb.formatValue(m.ports[2],'16'),/位宽/);
- assert.throws(()=>tb.formatValue(m.ports[4],'3'),/范围/);
- assert.throws(()=>tb.formatValue(m.ports[0],'0; finish'),/值/);
+ assert.throws(()=>tb.formatValue(m.ports[2],'16'),/bit width/);
+ assert.throws(()=>tb.formatValue(m.ports[4],'3'),/range/);
+ assert.throws(()=>tb.formatValue(m.ports[0],'0; finish'),/value/);
 });
 test('time sequences are monotonic, start at zero and stay within duration',()=>{
  const p=tb.instantiateEntity(tb.parseEntities(source)[0],{WIDTH:'4'}).ports[0];
@@ -32,8 +32,8 @@ test('time sequences are monotonic, start at zero and stay within duration',()=>
 });
 test('reject unsupported interfaces instead of emitting wrong VHDL',()=>{
  assert.throws(()=>tb.instantiateEntity(tb.parseEntities('entity e is port(io: inout std_logic); end;')[0],{}),/inout/);
- assert.throws(()=>tb.instantiateEntity(tb.parseEntities('entity e is port(x: in custom_type); end;')[0],{}),/类型/);
- assert.throws(()=>tb.parseEntities('entity e is generic(type T); end;'),/泛型/);
+ assert.throws(()=>tb.instantiateEntity(tb.parseEntities('entity e is port(x: in custom_type); end;')[0],{}),/type/);
+ assert.throws(()=>tb.parseEntities('entity e is generic(type T); end;'),/generic/);
 });
 test('generate distinct drivers, explicit associations and honest completion message',()=>{
  const m=tb.instantiateEntity(tb.parseEntities(source)[0],{WIDTH:'4'});
@@ -41,8 +41,8 @@ test('generate distinct drivers, explicit associations and honest completion mes
  clk:{mode:'clock',value:'0',period:'10ns',start:'0ns'},rst:{mode:'events',value:'0ns=1;20ns=0'},
  data:{mode:'events',value:'0ns=x"0";30ns=x"A"'},valid:{mode:'fixed',value:'true'},n:{mode:'fixed',value:'-2'}}});
  assert.match(code,/clk => tb_clk/);assert.match(code,/WIDTH => 4/);assert.match(code,/wait for 5 ns/);
- assert.doesNotMatch(code,/TB_PASS/);assert.match(code,/未设置输出检查/);assert.doesNotMatch(code,/tb_q <=/);
- assert.throws(()=>tb.generateTestbench(m,{name:'tb_demo',duration:'1ns',inputs:{}}),/输入/);
+ assert.doesNotMatch(code,/TB_PASS/);assert.match(code,/-- Stimuli complete; no output assertions configured/);assert.doesNotMatch(code,/tb_q <=/);
+ assert.throws(()=>tb.generateTestbench(m,{name:'tb_demo',duration:'1ns',inputs:{}}),/input/);
 });
 test('real NVC runs generated counter stimuli and generic bus values',async t=>{
  let executable;try{executable=await core.resolveNvc('');}catch{t.skip('NVC is not installed');return;}

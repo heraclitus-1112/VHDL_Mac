@@ -3,7 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use std.env.all;
 
--- Testbench 没有外部端口：它自己生成输入，并检查输出。
+-- The testbench has no external ports: it generates inputs and checks outputs.
 entity tb_counter is
 end entity tb_counter;
 
@@ -16,45 +16,45 @@ begin
   dut : entity work.counter(rtl)
     port map (clk => clk, rst => rst, en => en, count => count);
 
-  -- 每 5 ns 翻转一次，所以完整时钟周期为 10 ns。
+  -- Toggles every 5 ns, giving a full clock period of 10 ns.
   clk <= not clk after 5 ns;
 
   stimulus : process
   begin
-    -- 0 到 20 ns：复位。
+    -- 0 to 20 ns: reset.
     wait for 20 ns;
     assert count = to_unsigned(0, 4)
       report "Initial reset failed" severity failure;
     rst <= '0';
     en  <= '1';
 
-    -- 20 到 100 ns：计数 8 次。
+    -- 20 to 100 ns: count eight enabled clock edges.
     wait for 80 ns;
     assert count = to_unsigned(8, 4)
       report "Expected 8 after eight enabled clock edges" severity failure;
     en <= '0';
 
-    -- 100 到 130 ns：暂停，输出应保持 8。
+    -- 100 to 130 ns: hold; the output must remain 8.
     wait for 30 ns;
     assert count = to_unsigned(8, 4)
       report "Counter changed while disabled" severity failure;
     en <= '1';
 
-    -- 130 到 230 ns：继续计数；15 后回到 0，最终为 2。
+    -- 130 to 230 ns: resume; wrap from 15 to 0 and finish at 2.
     wait for 100 ns;
     assert count = to_unsigned(2, 4)
       report "Counter wraparound failed" severity failure;
     rst <= '1';
     en  <= '0';
 
-    -- 230 到 250 ns：再次复位。
+    -- 230 to 250 ns: reset again.
     wait for 20 ns;
     assert count = to_unsigned(0, 4)
       report "Second reset failed" severity failure;
     rst <= '0';
     en  <= '1';
 
-    -- 250 到 280 ns：再计数 3 次，并正常结束仿真。
+    -- 250 to 280 ns: count three more edges, then finish the simulation normally.
     wait for 30 ns;
     assert count = to_unsigned(3, 4)
       report "Expected 3 after restarting" severity failure;
