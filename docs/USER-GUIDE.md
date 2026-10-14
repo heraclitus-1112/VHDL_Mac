@@ -24,7 +24,7 @@ Open any `.vhd` or `.vhdl` file and click **▶ NVC: Run VHDL Simulation** in th
 
 For a one-time run without the saved time limit, use **NVC: Run All** from the Command Palette, the VHDL editor overflow menu, or the Explorer context menu. It changes the in-memory configuration for this run only. Subsequent runs from the play button or status bar use the saved configuration. The output channel explicitly reports Run All or the numeric stop time.
 
-Run All ends on `finish` / `stop`, a terminating failure, or no future events. It cannot run beyond the testbench's own finish condition. A clock that schedules events forever needs a finish condition or cancellation using the progress notification or **NVC: Cancel VHDL Simulation**.
+Run All ends on `finish` / `stop`, a terminating failure, or no future events. A `report` statement or the end of one process does not force the entire simulation to end. Exit code 0 alone does not prove that all intended checks completed or that the design passed its functional requirements. It cannot run beyond the testbench's own finish condition. A clock that schedules events forever needs a finish condition or cancellation using the progress notification or **NVC: Cancel VHDL Simulation**.
 
 In Surfer, expand a scope such as `tb_counter` on the left and select an instance. Click signal names under Variables to add them to the waveform on the right. Enlarge the editor group if needed. The example signals include `clk`, `rst`, `en`, and `count[3:0]`.
 

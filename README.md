@@ -40,7 +40,7 @@ This repository provides extension source and a prebuilt VSIX. Install NVC and t
 
 Run **NVC: Run All** from the Command Palette, the VHDL editor overflow menu, or the Explorer context menu to run until the testbench ends. It overrides the saved stop time for that run only; the play button and status bar continue to use the saved configuration. The output channel identifies the selected run mode.
 
-Run All stops when the testbench calls `finish` / `stop`, a terminating failure occurs, or no future events remain. A periodic clock without a finish condition can run indefinitely. Cancel it from the progress notification or **NVC: Cancel VHDL Simulation**; Run All does not bypass a testbench finish condition.
+Run All stops when the testbench calls `finish` / `stop`, a terminating failure occurs, or no future events remain. A `report` statement or the end of one process does not force the entire simulation to end. Exit code 0 alone does not prove that all intended checks completed or that the design passed its functional requirements. A periodic clock without a finish condition can run indefinitely. Cancel it from the progress notification or **NVC: Cancel VHDL Simulation**; Run All does not bypass a testbench finish condition.
 
 Each workspace root uses `vhdl.sim.json`:
 
