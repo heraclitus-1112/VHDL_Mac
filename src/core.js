@@ -21,7 +21,7 @@ function validateConfig(data) {
   const standard = data.standard ?? '2008';
   if (!['1993', '2002', '2008'].includes(standard)) throw new Error('standard 只能是 1993、2002 或 2008。');
   const stopTime = data.stopTime ?? '1us';
-  if (typeof stopTime !== 'string' || !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime)) throw new Error('stopTime 必须是正整数加单位 fs/ps/ns/us/ms/sec，例如 1us。');
+  if (typeof stopTime !== 'string' || (stopTime !== 'all' && !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime))) throw new Error('stopTime 必须为 all（运行到结束）或正整数加单位 fs/ps/ns/us/ms/sec，例如 1us。');
   const libraryPaths = data.libraryPaths ?? [];
   if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths 必须是有效目录路径数组。');
   if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays 必须是 0 到 1000000 的整数，0 表示关闭。');
@@ -72,7 +72,7 @@ function buildStageArgs(config, buildDir, wavePath) {
   return [
     { stage: 'analysis', args: [...common, '-a', ...config.sources] },
     { stage: 'elaboration', args: [...common, '-e', config.top] },
-    { stage: 'simulation', args: [...common, '-r', config.top, `--stop-time=${config.stopTime}`, `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
+    { stage: 'simulation', args: [...common, '-r', config.top, ...(config.stopTime === 'all' ? [] : [`--stop-time=${config.stopTime}`]), `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
   ];
 }
 function abortError() { const error = new Error('仿真已取消。'); error.name = 'AbortError'; return error; }

@@ -49,3 +49,14 @@
 - 全部63项测试通过。
 - 使用官方 Surfer 0.7.1001488 实际 WASM 和用户 Exo2 FST，独立浏览器中注入真实 RON（5个有效信号、1个失效信号、失效scope及旧数字编号）。恢复、重跑、再次打开三阶段均为5个有效信号、0个占位。真实页面结果 PASS。
 - 用户正在编辑 Exo3，因此最后验收不操作其未保存文件。
+
+
+## 0.4.0 Run All（2026-10-14）
+
+- 在修改生产代码前新增配置/schema、命令适配、向导及生成器回归与真实批 NVC 验收。运行 `node --test test/core.test.js test/extension.test.js test/generate.test.js test/run-all-real.test.js`：48 项中 35 通过、13 失败。红灯对应 `all` 被旧校验和 schema 拒绝、Run All 注册/菜单缺失、新配置仍使用数字时长、向导尚无模式选择和数字默认值保留。原始本次开发日志 `/tmp/nvc-run-all-red.log`。
+- 最小实现后，首轮 47/48 通过；剩余断言预期了错误的 NVC 完成提示。真实 NVC 输出为 `12ns+0: FINISH called`，据此修正测试的输出匹配，没有修改运行实现。
+- 随后补充生成的周期时钟 TB 在 all 模式下仍于数字 duration 调用 finish 的验收。完整 `node --test test/*.test.js`：79/79 通过，0 失败、0 跳过。环境：Node v24.19.0，Homebrew NVC 1.23.0（LLVM 23.1.1）；既有6项真实交互 NVC 测试同样通过。
+- 新真实批 NVC 测试证明：5ns 数字上限不会输出 12ns 的末尾 report，all 自然结束会输出；周期时钟由 12ns 的 finish 结束；无 finish 的周期时钟可取消且保留上次成功波形；生成器的时钟激励在 30ns 输出 STIMULUS_DONE 并 finish。
+- 通过真正注册的 VS Code 命令适配器和真实 NVC 进程验证 Run All 后保存的数字配置字节不变，随后的普通 Run 再次按 5ns 截断；取消命令释放项目锁且保留显示波形记录，之后可重新运行；Run All 运行时断言失败报告诊断并保留原波形窗口记录。宿主 API 使用轻量替身，未把该测试当作实际 GUI 波形加载证明。
+- 向导覆盖 all/数字稳定 id（改变 label 仍按 id 运行）、新配置默认 all、现有模式首项和数字输入默认值（含缺省字段仍为 1us）、模式/数字输入取消不写入；生成器覆盖新配置 all、已有 all 保持及数字上限按原规则提高/保留。
+- 本次未改动交互分段运行实现；安装包和真实 VS Code / Surfer UI 验收由主任务负责。

@@ -97,7 +97,7 @@ async function setSimulationTarget(vscode, root, result) {
       const next = await vscode.window.showQuickPick(remaining, { title: `确认源文件顺序 ${ordered.length + 1}/${chosen.length}`, placeHolder: '先选依赖文件，最后选被测设计；新 testbench 自动排最后。', ignoreFocusOut: true });
       if (next === undefined) return; ordered.push(next); remaining.splice(remaining.indexOf(next), 1);
     }
-    config = { sources: ordered, top: result.name, standard: '2008', stopTime: result.duration, libraryPaths: [] };
+    config = { sources: ordered, top: result.name, standard: '2008', stopTime: 'all', libraryPaths: [] };
   }
   const retained = [], missing = [];
   for (const item of config.sources.filter(item => item !== generated)) {
@@ -107,10 +107,10 @@ async function setSimulationTarget(vscode, root, result) {
   config = { ...config, sources: retained };
   if (!config.sources.includes(source)) config.sources.push(source);
   config.sources.push(generated); config.top = result.name; config.standard = '2008';
-  if (tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
+  if (config.stopTime !== 'all' && tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
   core.validateConfig(config); await core.resolveProject(root, config);
   const cleanup = missing.length ? `\n将从配置中移除已删除的源文件：${missing.join('、')}。若仍需要这些依赖，请取消并重新配置。` : '';
-  if (await vscode.window.showInformationMessage(`设置顶层 ${config.top}，VHDL-2008，上限 ${config.stopTime}？\n编译顺序：${config.sources.join(' → ')}\n已有库目录保持。${cleanup}`, { modal: true }, '设置') !== '设置') return;
+  if (await vscode.window.showInformationMessage(`设置顶层 ${config.top}，VHDL-2008，${config.stopTime === 'all' ? '运行到结束' : `上限 ${config.stopTime}`}？\n编译顺序：${config.sources.join(' → ')}\n已有库目录保持。${cleanup}`, { modal: true }, '设置') !== '设置') return;
   // Recheck after user interaction; never replace a symlink or dirty editor buffer.
   try { const info = await fs.lstat(filename); if (!info.isFile() || info.isSymbolicLink()) throw new Error('vhdl.sim.json 必须是普通文件。'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (vscode.workspace.textDocuments.some(doc => doc.isDirty && doc.uri.fsPath === filename)) throw new Error('配置存在未保存修改，已停止更新。');

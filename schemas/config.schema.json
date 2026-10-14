@@ -35,8 +35,9 @@
     },
     "stopTime": {
       "type": "string",
-      "pattern": "^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$",
-      "default": "1us"
+      "pattern": "^(all|[1-9][0-9]*(fs|ps|ns|us|ms|sec))$",
+      "default": "1us",
+      "description": "all 表示运行到结束；正整数时间表示停止上限。省略此字段保持旧版 1us 默认行为。"
     },
     "libraryPaths": {
       "description": "已有编译库的搜索目录，可以是工作区相对路径或绝对路径。",

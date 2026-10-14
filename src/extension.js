@@ -85,6 +85,12 @@ function createExtension(vscode, context) {
   async function configure(uri) {
     const saved = await withProject(uri, false, async (_, root) => {
       const filename = await configPath(root);
+      let previousStopTime;
+      try {
+        const previous = JSON.parse(await fs.readFile(filename, 'utf8'));
+        const value = previous?.stopTime ?? '1us';
+        if (value === 'all' || typeof value === 'string' && /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value)) previousStopTime = value;
+      } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
       const sources = await core.discoverSources(root);
       if (!sources.length) throw new Error('工作区没有 .vhd/.vhdl 源文件。请先创建设计和测试平台。');
       const selected = await vscode.window.showQuickPick(sources, { title: '选择参与仿真的源文件', canPickMany: true, ignoreFocusOut: true });
@@ -99,8 +105,20 @@ function createExtension(vscode, context) {
       const top = await vscode.window.showInputBox({ title: '确认顶层测试平台实体名称', value: path.basename(ordered.at(-1)).replace(/\.vhdl?$/i, ''), ignoreFocusOut: true, validateInput: value => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(value) ? undefined : '请输入有效的 VHDL 基本实体名称' });
       if (top === undefined) return;
       const standard = await vscode.window.showQuickPick(['2008', '2002', '1993'], { title: '选择 VHDL 标准', ignoreFocusOut: true }); if (!standard) return;
-      const stopTime = await vscode.window.showInputBox({ title: '仿真停止时间', value: '1us', ignoreFocusOut: true, validateInput: value => /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value) ? undefined : '正整数加 fs/ps/ns/us/ms/sec，例如 1us' });
-      if (stopTime === undefined) return;
+      const defaultMode = previousStopTime === undefined || previousStopTime === 'all' ? 'all' : 'time';
+      const modes = [
+        { id: 'all', label: '运行到结束（Run All）', description: '直到 finish、终止性失败或没有未来事件', picked: defaultMode === 'all' },
+        { id: 'time', label: '运行到指定时间', description: '使用正整数时间上限', picked: defaultMode === 'time' }
+      ];
+      // The current mode is first so the single-choice picker initially selects it.
+      modes.sort((a, b) => Number(b.picked) - Number(a.picked));
+      const mode = await vscode.window.showQuickPick(modes, { title: '选择仿真运行模式', ignoreFocusOut: true });
+      if (!mode) return;
+      let stopTime = 'all';
+      if (mode.id === 'time') {
+        stopTime = await vscode.window.showInputBox({ title: '仿真停止时间', value: previousStopTime && previousStopTime !== 'all' ? previousStopTime : '1us', ignoreFocusOut: true, validateInput: value => /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value) ? undefined : '正整数加 fs/ps/ns/us/ms/sec，例如 1us' });
+        if (stopTime === undefined) return;
+      }
       const config = core.validateConfig({ sources: ordered, top, standard, stopTime, libraryPaths: [] });
       await core.resolveProject(root, config);
       try {
@@ -117,7 +135,7 @@ function createExtension(vscode, context) {
     });
     if (saved) await vscode.window.showInformationMessage('VHDL 仿真配置已保存，点击播放按钮即可运行。');
   }
-  async function run(uri) {
+  async function run(uri, stopTimeOverride) {
     return withProject(uri, true, async (folder, root, controller) => {
       // Reject unsafe configuration before saving (it may alias a user's VHDL source).
       const filename = await configPath(root);
@@ -129,11 +147,13 @@ function createExtension(vscode, context) {
         if (error instanceof SyntaxError) throw new Error(`vhdl.sim.json JSON 格式错误：${error.message}`);
         throw error;
       }
-      core.validateConfig(config);
+      config = core.validateConfig(config);
+      if (stopTimeOverride === 'all') config = { ...config, stopTime: 'all' };
       const executable = await core.resolveNvc(vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('nvcPath', ''));
       const surfer = vscode.extensions.getExtension('surfer-project.surfer');
       if (!surfer) throw new Error('缺少官方 Surfer 扩展，请安装 surfer-project.surfer 后重试。');
       output.show(true); output.appendLine(`\n项目：${root}\nNVC：${executable}`);
+      output.appendLine(config.stopTime === 'all' ? '运行模式：运行到结束（Run All）' : `运行模式：运行到指定时间（${config.stopTime}）`);
       return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'NVC VHDL 仿真', cancellable: true }, async (progress, token) => {
         const disposable = token.onCancellationRequested(() => controller.abort());
         if (token.isCancellationRequested) controller.abort();
@@ -152,6 +172,7 @@ function createExtension(vscode, context) {
       });
     });
   }
+  function runAll(uri) { return run(uri, 'all'); }
   async function cancel(uri) {
     const folder = await selectFolder(uri); if (!folder) return;
     const root = await fs.realpath(folder.uri.fsPath);
@@ -237,10 +258,10 @@ function createExtension(vscode, context) {
   }
   viewer.onControl = controlInteractive;
   async function controlFromCommand(uri, action) { const folder = await selectFolder(uri); if (folder) await controlInteractive(await fs.realpath(folder.uri.fsPath), action); }
-  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
+  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.runAll', runAll), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
   context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.startInteractive', startInteractive));
   for (const [command, action] of Object.entries({ stepInteractive: 'step', continueInteractive: 'continue', pauseInteractive: 'pause', forceSignal: 'force', releaseSignal: 'release', examineSignal: 'inspect', stopInteractive: 'stop' })) context.subscriptions.push(vscode.commands.registerCommand(`nvcRunner.${command}`, uri => controlFromCommand(uri, action)));
-  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, configure, cancel, generate, startInteractive, controlInteractive };
+  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, runAll, configure, cancel, generate, startInteractive, controlInteractive };
 }
 function activate(context) { activeInstance = createExtension(require('vscode'), context); context.subscriptions.push(activeInstance); }
 function deactivate() { activeInstance?.dispose(); activeInstance = undefined; }

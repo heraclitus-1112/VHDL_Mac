@@ -6,17 +6,150 @@ const os = require('node:os');
 const path = require('node:path');
 let extension={};try{extension=require('../src/extension');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;}
 async function fixture(t){const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nvc adapter ')));t.after(()=>fs.rm(root,{recursive:true,force:true}));await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end;');return root;}
-function fake(root){const commands=new Map(),errors=[],calls=[],diagnostics=new Map();const folder={name:'project',uri:{fsPath:root,scheme:'file'}};const vscode={
+function fake(root,onOutput=()=>{}){const commands=new Map(),errors=[],calls=[],diagnostics=new Map();const folder={name:'project',uri:{fsPath:root,scheme:'file'}};const vscode={
  Uri:{file:fsPath=>({fsPath,scheme:'file',toString(){return fsPath;}})},ViewColumn:{Beside:2},ProgressLocation:{Notification:1},StatusBarAlignment:{Left:1},DiagnosticSeverity:{Error:0,Warning:1},Range:class{constructor(...args){this.args=args;}},Diagnostic:class{constructor(range,message,severity){Object.assign(this,{range,message,severity});}},
  workspace:{isTrusted:true,workspaceFolders:[folder],textDocuments:[],getWorkspaceFolder:uri=>uri.fsPath.startsWith(root+path.sep)||uri.fsPath===root?folder:undefined,getConfiguration:()=>({get:()=>process.execPath})},
- window:{activeTextEditor:{document:{uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'}}},createOutputChannel:()=>({append:s=>calls.push(['output',s]),appendLine:s=>calls.push(['output',s]),show(){},dispose(){}}),createStatusBarItem:()=>({show(){},dispose(){}}),showErrorMessage:async message=>errors.push(message),showInformationMessage:async()=>undefined,showQuickPick:async()=>undefined,showInputBox:async()=>undefined,withProgress:async(_,callback)=>callback({report(){}},{isCancellationRequested:false,onCancellationRequested:()=>({dispose(){}})})},
+ window:{activeTextEditor:{document:{uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'}}},createOutputChannel:()=>({append:s=>{calls.push(['output',s]);onOutput(s);},appendLine:s=>{calls.push(['output',s]);onOutput(s);},show(){},dispose(){}}),createStatusBarItem:()=>({show(){},dispose(){}}),showErrorMessage:async message=>errors.push(message),showInformationMessage:async()=>undefined,showQuickPick:async()=>undefined,showInputBox:async()=>undefined,withProgress:async(_,callback)=>callback({report(){}},{isCancellationRequested:false,onCancellationRequested:()=>({dispose(){}})})},
  languages:{createDiagnosticCollection:()=>({set:(uri,value)=>diagnostics.set(uri.fsPath,value),delete:uri=>diagnostics.delete(uri.fsPath),dispose(){}})},commands:{registerCommand:(id,callback)=>{commands.set(id,callback);return{dispose(){}};},executeCommand:async(...args)=>calls.push(args)},extensions:{getExtension:()=>({activate:async()=>calls.push(['activateSurfer'])})}};return{vscode,commands,errors,calls,diagnostics,folder};}
 function init(state){assert.equal(typeof extension.createExtension,'function');return extension.createExtension(state.vscode,{subscriptions:[]});}
 test('testbench generation command checks workspace trust before opening UI',async t=>{const root=await fixture(t);const s=fake(root);s.vscode.workspace.isTrusted=false;init(s);assert.equal(typeof s.commands.get('nvcRunner.generateTestbench'),'function');await s.commands.get('nvcRunner.generateTestbench')();assert.match(s.errors[0],/信任/);assert.deepEqual(await fs.readdir(root),['tb.vhd']);});
 test('untrusted run stops before saving dirty documents',async t=>{const root=await fixture(t);const s=fake(root);s.vscode.workspace.isTrusted=false;let saved=false;s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'},save:async()=>{saved=true;return true;}}];init(s);await s.commands.get('nvcRunner.run')();assert.equal(saved,false);assert.match(s.errors[0],/信任/);});
 test('run lock is acquired before saving and only saves selected project files',async t=>{const root=await fixture(t);const s=fake(root);let release;let saved=0,outsideSaved=false;const wait=new Promise(resolve=>release=resolve);s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'},save:async()=>{saved++;await wait;return false;}},{isDirty:true,uri:{fsPath:'/outside/other.vhd',scheme:'file'},save:async()=>{outsideSaved=true;return true;}}];init(s);const first=s.commands.get('nvcRunner.run')();while(saved===0)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();release();await first;assert.equal(saved,1);assert.equal(outsideSaved,false);assert.ok(s.errors.some(message=>/正在/.test(message)));assert.ok(s.errors.some(message=>/保存/.test(message)));});
 test('configuration wizard cancellation leaves project unchanged',async t=>{const root=await fixture(t);const s=fake(root);init(s);await s.commands.get('nvcRunner.configure')();await assert.rejects(fs.stat(path.join(root,'vhdl.sim.json')));assert.deepEqual(await fs.readdir(root),['tb.vhd']);});
-test('configuration wizard records explicit order and confirmed fields',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'logic.vhdl'),'');const s=fake(root);const picks=[['logic.vhdl','tb.vhd'],'logic.vhdl','tb.vhd','2008'];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();init(s);await s.commands.get('nvcRunner.configure')();const config=JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8'));assert.deepEqual(config,{sources:['logic.vhdl','tb.vhd'],top:'tb',standard:'2008',stopTime:'1us',libraryPaths:[]});});
-test('saved configuration releases project lock while success notification remains open',async t=>{const root=await fixture(t);const s=fake(root);const picks=[['tb.vhd'],'tb.vhd','2008'];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();let releaseMessage,notificationShown=false;const pendingMessage=new Promise(resolve=>releaseMessage=resolve);s.vscode.window.showInformationMessage=async message=>{if(message.includes('配置已保存')){notificationShown=true;await pendingMessage;}};init(s);const configuring=s.commands.get('nvcRunner.configure')();try{while(!notificationShown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.equal(s.errors.some(message=>/正在运行或配置/.test(message)),false,'saved configuration must not block a new run');assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('项目：')),'run should reach the NVC stage');}finally{releaseMessage();await configuring;}});
+test('configuration wizard records explicit order and confirmed fields',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'logic.vhdl'),'');const s=fake(root);const picks=[['logic.vhdl','tb.vhd'],'logic.vhdl','tb.vhd','2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();init(s);await s.commands.get('nvcRunner.configure')();const config=JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8'));assert.deepEqual(config,{sources:['logic.vhdl','tb.vhd'],top:'tb',standard:'2008',stopTime:'1us',libraryPaths:[]});});
+test('saved configuration releases project lock while success notification remains open',async t=>{const root=await fixture(t);const s=fake(root);const picks=[['tb.vhd'],'tb.vhd','2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();let releaseMessage,notificationShown=false;const pendingMessage=new Promise(resolve=>releaseMessage=resolve);s.vscode.window.showInformationMessage=async message=>{if(message.includes('配置已保存')){notificationShown=true;await pendingMessage;}};init(s);const configuring=s.commands.get('nvcRunner.configure')();try{while(!notificationShown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.equal(s.errors.some(message=>/正在运行或配置/.test(message)),false,'saved configuration must not block a new run');assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('项目：')),'run should reach the NVC stage');}finally{releaseMessage();await configuring;}});
 test('config symlink cannot overwrite VHDL source',async t=>{const root=await fixture(t);await fs.symlink(path.join(root,'tb.vhd'),path.join(root,'vhdl.sim.json'));const s=fake(root);init(s);await s.commands.get('nvcRunner.run')();assert.match(s.errors[0],/符号链接/);assert.equal(await fs.readFile(path.join(root,'tb.vhd'),'utf8'),'entity tb is end;');});
 test('dirty file symlink outside workspace is never saved',async t=>{const root=await fixture(t);const outside=await fs.mkdtemp(path.join(os.tmpdir(),'outside save '));t.after(()=>fs.rm(outside,{recursive:true,force:true}));const target=path.join(outside,'external.vhd');await fs.writeFile(target,'unchanged');await fs.symlink(target,path.join(root,'linked.vhd'));const s=fake(root);let saved=false;s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'linked.vhd'),scheme:'file'},save:async()=>{saved=true;return true;}}];init(s);await s.commands.get('nvcRunner.run')();assert.equal(saved,false);assert.match(s.errors[0],/工作区/);});
+
+
+function wizard(state, mode, inputs = ['tb']) {
+  const picks = [['tb.vhd'], 'tb.vhd', '2008'];
+  state.vscode.window.showQuickPick = async (items, options) => {
+    if (picks.length) return picks.shift();
+    assert.equal(options.title, '选择仿真运行模式');
+    assert.ok(items.some(item => item.id === 'all'));
+    assert.ok(items.some(item => item.id === 'time'));
+    return mode === undefined ? undefined : {...items.find(item => item.id === mode), label:'locale-independent label'};
+  };
+  state.vscode.window.showInputBox = async () => inputs.shift();
+}
+test('new configuration defaults to all and uses stable mode identifiers', async t => {
+  const root = await fixture(t), s = fake(root); wizard(s,'all');
+  const pick = s.vscode.window.showQuickPick;
+  s.vscode.window.showQuickPick = async (items, options) => {
+    if (options.title === '选择仿真运行模式') { assert.equal(items.find(item => item.picked).id,'all'); assert.equal(items[0].id,'all'); }
+    return pick(items, options);
+  };
+  init(s); await s.commands.get('nvcRunner.configure')();
+  assert.equal(JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8')).stopTime,'all');
+  assert.deepEqual(s.errors,[]);
+});
+test('reconfiguration retains numeric or all mode and numeric value', async t => {
+  for (const savedStopTime of ['7us','all',undefined]) {
+    const stopTime = savedStopTime ?? '1us';
+    const root = await fixture(t), s = fake(root);
+    await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:savedStopTime}));
+    wizard(s,stopTime === 'all' ? 'all' : 'time', ['tb',stopTime]);
+    const pick = s.vscode.window.showQuickPick;
+    s.vscode.window.showQuickPick = async (items, options) => {
+      if(options.title === '选择仿真运行模式') { assert.equal(items.find(item => item.picked).id,stopTime === 'all' ? 'all' : 'time'); assert.equal(items[0].id,stopTime === 'all' ? 'all' : 'time'); }
+      return pick(items,options);
+    };
+    const input = s.vscode.window.showInputBox;
+    s.vscode.window.showInputBox = async options => {
+      if(options.title === '仿真停止时间') assert.equal(options.value,stopTime);
+      return input(options);
+    };
+    s.vscode.window.showInformationMessage = async () => '替换';
+    init(s); await s.commands.get('nvcRunner.configure')();
+    assert.equal(JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8')).stopTime,stopTime);
+    assert.deepEqual(s.errors,[]);
+  }
+});
+test('cancelling mode selection or numeric duration preserves existing config', async t => {
+  for (const mode of [undefined,'time']) {
+    const root = await fixture(t), s = fake(root), filename = path.join(root,'vhdl.sim.json');
+    const original = JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'2us'});
+    await fs.writeFile(filename,original); wizard(s,mode,['tb',undefined]); init(s);
+    await s.commands.get('nvcRunner.configure')(); assert.equal(await fs.readFile(filename,'utf8'),original);
+    assert.deepEqual(s.errors,[]);
+  }
+});
+test('Run All adapter temporarily overrides saved numeric config and subsequent Run stays numeric', {timeout:15000}, async t => {
+  const executable = process.env.NVC_BATCH_TEST || '/opt/homebrew/bin/nvc';
+  try {await fs.access(executable);} catch {t.skip('No batch NVC installed.');return;}
+  const root=await fixture(t), s=fake(root), filename=path.join(root,'vhdl.sim.json');
+  await fs.writeFile(path.join(root,'tb.vhd'), 'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; report "AFTER_LIMIT"; wait; end process; end;');
+  const original=JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}); await fs.writeFile(filename,original);
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());assert.equal(typeof s.commands.get('nvcRunner.runAll'),'function');
+  const all = await s.commands.get('nvcRunner.runAll')(); assert.ok(all,s.errors.join(' ')); assert.match(all.output,/12ns.*AFTER_LIMIT/);
+  assert.equal(await fs.readFile(filename,'utf8'),original);
+  const numeric = await s.commands.get('nvcRunner.run')(); assert.ok(numeric,s.errors.join(' ')); assert.doesNotMatch(numeric.output,/AFTER_LIMIT/);
+  assert.equal(await fs.readFile(filename,'utf8'),original);
+  assert.ok(s.calls.some(([kind,text])=>kind==='output'&&/运行模式：运行到结束/.test(text)));
+  assert.ok(s.calls.some(([kind,text])=>kind==='output'&&/运行模式：运行到指定时间（5ns）/.test(text)));
+  assert.equal(s.calls.filter(([kind])=>kind==='vscode.openWith').length,2);
+});
+test('Run All contribution appears in command palette and VHDL editor overflow and explorer', () => {
+  const manifest = require('../package.json');
+  assert.equal(manifest.contributes.commands.find(item=>item.command==='nvcRunner.runAll')?.title,'NVC: 运行到结束（Run All）');
+  for (const menu of ['editor/title','explorer/context']) {
+    const item=manifest.contributes.menus[menu].find(item=>item.command==='nvcRunner.runAll');
+    assert.ok(item); assert.match(item.when,/resourceExtname == \.vhd/);
+    if(menu==='editor/title') assert.notEqual(item.group,'navigation');
+  }
+});
+
+test('Run All reuses trust, save and project lock protection', async t => {
+  const root=await fixture(t), s=fake(root);init(s);
+  const runAll=s.commands.get('nvcRunner.runAll');assert.equal(typeof runAll,'function');
+  let saved=0,release;const pending=new Promise(resolve=>release=resolve);
+  s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'},save:async()=>{saved++;await pending;return false;}}];
+  s.vscode.workspace.isTrusted=false;await runAll();assert.equal(saved,0);assert.match(s.errors[0],/信任/);
+  s.vscode.workspace.isTrusted=true;const first=runAll();while(!saved)await new Promise(resolve=>setImmediate(resolve));
+  await s.commands.get('nvcRunner.run')();release();await first;
+  assert.equal(saved,1);assert.ok(s.errors.some(message=>/正在/.test(message)));assert.ok(s.errors.some(message=>/保存/.test(message)));
+});
+test('Run All cancellation through registered command releases project lock and preserves displayed wave', {timeout:15000}, async t => {
+  const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+  try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+  let cancellationEnabled=false,cancelRequested=false,cancelling;
+  const root=await fixture(t),s=fake(root,text=>{
+    if(cancellationEnabled&&text.includes('ADAPTER_CLOCK')&&!cancelRequested){
+      cancelRequested=true;cancelling=s.commands.get('nvcRunner.cancel')();
+    }
+  });
+  await fs.writeFile(path.join(root,'tb.vhd'),`library ieee; use ieee.std_logic_1164.all; entity tb is end;
+architecture sim of tb is signal clk:std_logic:='0'; begin clk<=not clk after 5 ns;
+process begin report "ADAPTER_CLOCK"; wait; end process; end;`);
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());assert.equal(typeof s.commands.get('nvcRunner.runAll'),'function');
+  const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+  const marker=path.join(root,'.nvc-build','waveform.nvcwave'), previous=await fs.readFile(marker,'utf8');
+  cancellationEnabled=true;
+  await s.commands.get('nvcRunner.runAll')();await cancelling;
+  assert.equal(cancelRequested,true);assert.deepEqual(s.errors,[]);assert.equal(await fs.readFile(marker,'utf8'),previous);
+  assert.ok((await fs.stat(prior.wavePath)).size>0);
+  cancellationEnabled=false;const next=await s.commands.get('nvcRunner.run')();assert.ok(next,s.errors.join(' '));
+});
+
+
+test('Run All runtime failure reports diagnostics and preserves the previous viewer result', {timeout:15000}, async t => {
+  const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+  try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+  const root=await fixture(t),s=fake(root),source=path.join(root,'tb.vhd');
+  await fs.writeFile(source,'entity tb is end; architecture sim of tb is begin process begin wait for 5 ns; wait; end process; end;');
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+  s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+  const instance=init(s);t.after(()=>instance.dispose());
+  assert.equal(typeof s.commands.get('nvcRunner.runAll'),'function');
+  const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+  const marker=path.join(root,'.nvc-build','waveform.nvcwave'),previous=await fs.readFile(marker,'utf8');
+  await fs.writeFile(source,'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; assert false report "RUN_ALL_FAILURE" severity failure; wait; end process; end;');
+  assert.equal(await s.commands.get('nvcRunner.runAll')(),undefined);
+  assert.match(s.errors[0],/退出码/);assert.ok(s.diagnostics.get(source).some(item=>item.message.includes('RUN_ALL_FAILURE')));
+  assert.equal(await fs.readFile(marker,'utf8'),previous);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(s.calls.filter(([kind])=>kind==='vscode.openWith').length,1);
+});

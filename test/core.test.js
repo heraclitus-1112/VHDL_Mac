@@ -101,3 +101,22 @@ test('array dumping is validated and included only in the simulation command',()
   assert.ok(args.slice(0,2).every(stage=>!stage.args.some(arg=>arg.startsWith('--dump-arrays'))));
   for(const value of [-1,1.5,1000001,'1024'])assert.throws(()=>core.validateConfig({...config,dumpArrays:value}));
 });
+
+
+test('all stop time is accepted literally and omits only the stop-time argument', () => {
+  const input = {...config, stopTime:'all', dumpArrays:1024};
+  const validated = core.validateConfig(input);
+  assert.equal(validated.stopTime, 'all');
+  const allArgs = core.buildStageArgs(validated, '/tmp/build', '/tmp/current.fst');
+  const timedArgs = core.buildStageArgs({...validated, stopTime:'2us'}, '/tmp/build', '/tmp/current.fst');
+  assert.deepEqual(allArgs, timedArgs.map(stage => ({...stage, args:stage.args.filter(arg => !arg.startsWith('--stop-time='))})));
+  assert.deepEqual(input, {...config, stopTime:'all', dumpArrays:1024});
+  for (const value of ['ALL',' all','all ','all;rm','infinite',1]) assert.throws(() => core.validateConfig({...config,stopTime:value}));
+});
+test('schema accepts all and numeric durations while retaining omitted-field compatibility', async () => {
+  const schema = JSON.parse(await fs.readFile(path.join(__dirname,'../schemas/config.schema.json'),'utf8'));
+  const field = schema.properties.stopTime;
+  assert.equal(field.type,'string'); assert.equal(field.default,'1us');
+  for (const value of ['all','1us','10sec']) assert.ok(new RegExp(field.pattern).test(value), value);
+  for (const value of ['ALL','0ns','all;rm','1.2ns']) assert.ok(!new RegExp(field.pattern).test(value), value);
+});

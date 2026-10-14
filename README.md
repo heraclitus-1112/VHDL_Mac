@@ -13,7 +13,7 @@ brew install nvc
 git clone https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.3.1.vsix
+code --install-extension packages/nvc-runner-0.4.0.vsix
 code examples/counter
 ```
 
@@ -27,7 +27,7 @@ code examples/counter
 
 1. 安装 NVC，并安装官方扩展 `surfer-project.surfer`。扩展要求 VS Code 1.85 或以上及可信任的本地工作区。
 2. 打开包含设计和测试平台的文件夹，执行 **NVC: 配置 VHDL 仿真**。
-3. 多选源文件，再逐项指定编译顺序；确认顶层测试平台实体、VHDL 标准和停止时间。
+3. 多选源文件，再逐项指定编译顺序；确认顶层测试平台实体、VHDL 标准和运行模式；新配置默认运行到结束。
 4. 打开 `.vhd` / `.vhdl`，点击编辑器右上角播放按钮，或点击状态栏 **NVC 仿真**。
 5. 在 Surfer 中选择要观察的信号。该查看器维护自己的信号选择界面。
 
@@ -38,10 +38,18 @@ code examples/counter
   "sources": ["counter.vhd", "tb_counter.vhd"],
   "top": "tb_counter",
   "standard": "2008",
-  "stopTime": "1us",
+  "stopTime": "all",
   "libraryPaths": []
 }
 ```
+
+## 运行到结束（Run All，0.4.0）
+
+普通 ▶ 和状态栏按钮按项目的 `stopTime` 运行：`"all"` 表示运行到结束，`"5us"` 等数字时间表示停止上限。配置向导可选择这两种模式；新配置默认 `all`，重新配置已有项目时优先保留当前模式和数字值。旧配置不自动改变，省略 `stopTime` 仍按 `1us` 运行。
+
+需要临时越过已保存的时间上限时，执行 **NVC: 运行到结束（Run All）**。命令位于命令面板、VHDL 编辑器标题栏的“…”菜单及 VHDL 文件的资源管理器右键菜单。它仅覆盖本次运行的内存配置，不改写 `vhdl.sim.json`；下一次普通 ▶ 仍使用保存的模式。输出通道会先显示本次模式。
+
+`all` 不向 NVC 传 `--stop-time`，仿真在 `std.env.finish`、终止性失败或没有未来事件时结束。`end process` 只是过程结束，`report` 只是输出消息；它们不会强制结束整场仿真。有持续周期时钟的 testbench 应在测试完成后调用 `std.env.finish`（VHDL-2008）。没有结束条件时，可以用进度通知的取消按钮或 **NVC: 取消 VHDL 仿真** 中止。错误或取消后保留上次成功波形。退出码 0 仅表示 NVC 本次正常退出；功能是否正确仍需结合断言和输出判断。
 
 ## 自动生成 Testbench（0.2.0）
 
@@ -57,13 +65,13 @@ code examples/counter
 
 向量可用十进制、`"0101"` / `0b0101`、`x"A5"` / `0xA5`；二进制和十六进制必须匹配完整位宽，十进制按 signed/unsigned 范围检查。周期模式仅用于 `std_logic`。所有时间为非负整数加 fs/ps/ns/us/ms/sec，输入变化必须早于结束时间。
 
-确认新实体名称并预览后，创建根目录下的同名 `.vhd`；已有文件不会覆盖。选择 **设为仿真顶层** 并确认编译顺序、标准和时限，即可点击 ▶ 运行。原有库路径保留；未配置项目先选择依赖源文件并确认顺序。生成使用 VHDL-2008。
+确认新实体名称并预览后，创建根目录下的同名 `.vhd`；已有文件不会覆盖。选择 **设为仿真顶层** 并确认编译顺序、标准和时限，即可点击 ▶ 运行。原有库路径保留；未配置项目先选择依赖源文件并确认顺序。创建新配置使用 `stopTime: "all"`；更新已有配置时保留 `all`，已有数字上限若短于测试结束时间则提高到该时间。生成器的结束时间仍是数字时长，控制激励边界和 TB 内的 `finish`，与运行模式分开。生成使用 VHDL-2008。
 
 支持 std_logic、std_logic_vector、signed、unsigned、boolean 和基本整数/整数范围，支持简单整数泛型及位宽中的 `+ - * /` 运算。自定义类型、复杂泛型、inout/buffer 和扩展标识符等会提示不支持。输出仅连接观察，不生成输出驱动。生成器提供**输入激励**，预期输出仍需按设计要求填写 `assert`；完成提示为 `STIMULUS_DONE: no output assertions configured`，不冒充测试通过。
 
 测试时可以为计数器选择：clk 周期 10ns，rst 定时 `0ns=1;20ns=0`，en 定时 `0ns=0;20ns=1;100ns=0;130ns=1`，结束 300ns，文件名 `tb_counter_inputs`。
 
-`sources` 必须是工作区内存在的 `.vhd` / `.vhdl` 文件，顺序就是编译顺序，不能使用 `..` 或符号链接逃出工作区。`top` 是顶层基本实体名称，不带库名前缀。`standard` 可选 `1993` / `2002` / `2008`，默认 `2008`。`stopTime` 为正整数加 `fs` / `ps` / `ns` / `us` / `ms` / `sec`，默认 `1us`。`libraryPaths` 是已经存在的库目录，可使用相对或绝对路径；本扩展不会自动编译外部库。
+`sources` 必须是工作区内存在的 `.vhd` / `.vhdl` 文件，顺序就是编译顺序，不能使用 `..` 或符号链接逃出工作区。`top` 是顶层基本实体名称，不带库名前缀。`standard` 可选 `1993` / `2002` / `2008`，默认 `2008`。`stopTime` 为字面量 `all`，或正整数加 `fs` / `ps` / `ns` / `us` / `ms` / `sec`；省略字段默认 `1us`。`libraryPaths` 是已经存在的库目录，可使用相对或绝对路径；本扩展不会自动编译外部库。
 
 配置向导忽略 `.nvc-build`、`.git`、`node_modules`、`build`、`dist`、`out`、`.vscode-test`，不会扫描符号链接。向导取消时不会写入配置。已有配置需要点击“替换”才会覆盖。
 
@@ -82,10 +90,10 @@ code examples/counter
 ```text
 nvc --std=2008 --work=work:<project>/.nvc-build/work -a <sources...>
 nvc --std=2008 --work=work:<project>/.nvc-build/work -e tb_counter
-nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --stop-time=1us --wave=<unique.fst>
+nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --wave=<unique.fst>
 ```
 
-库目录通过各阶段共有的 `-L <directory>` 传入。任一阶段失败后停止；所有阶段成功且本次新 FST 存在、非空时，才更新 `nvcRunner.waveformViewer`，使用已安装的官方 Surfer 渲染资源。每次使用独立 FST 文件名，保证旧编辑器不会冒充本次结果。
+上例为 `all` 模式；数字模式的运行参数还包含 `--stop-time=1us` 等上限。库目录通过各阶段共有的 `-L <directory>` 传入。任一阶段失败后停止；所有阶段成功且本次新 FST 存在、非空时，才更新 `nvcRunner.waveformViewer`，使用已安装的官方 Surfer 渲染资源。每次使用独立 FST 文件名，保证旧编辑器不会冒充本次结果。
 
 构建文件只放在 `.nvc-build`；该目录及其 `work` 子目录不能是符号链接。扩展只删除 `.nvc-runner.json` 中记录的上一次自有波形，保留其他文件。失败时保留上次已显示的波形；该波形代表上次成功结果，请查看“NVC 仿真”输出中的本次状态。
 
@@ -95,7 +103,7 @@ nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --stop-time=1
 
 ## 交互仿真（0.3.0）
 
-普通 ▶ 执行完整 testbench。需要分段推进、暂停和临时改输入时，运行 **NVC: 启动交互仿真**。首次编译后自动运行初始 100ns（若提前 finish，则停在实际结束时间），在同一个波形窗口上方显示交互按钮：
+普通 ▶ 按保存的运行模式执行 testbench；Run All 用于运行到结束。需要分段推进、暂停和临时改输入时，运行 **NVC: 启动交互仿真**。首次编译后自动运行初始 100ns（若提前 finish，则停在实际结束时间），在同一个波形窗口上方显示交互按钮：
 
 | 按钮 | 操作 |
 |---|---|
