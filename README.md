@@ -11,7 +11,7 @@ brew install nvc
 git clone https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.3.0.vsix
+code --install-extension packages/nvc-runner-0.3.1.vsix
 code examples/counter
 ```
 
@@ -71,7 +71,9 @@ code examples/counter
 
 ## 运行与波形
 
-0.2.2 起默认使用独立的 VS Code 编辑器窗口显示波形，代码留在原窗口。VS Code 设置中的 **NVC Runner: Waveform Window** 可选择 `newWindow`（独立窗口，默认）或 `beside`（并排）。0.3.0 起，同一项目复用一个固定波形窗口；重跑保留已选信号、顺序、格式、游标和视图，关闭后重新打开也会恢复。可用 `nvcRunner.preserveWaveformLayout` 关闭恢复；Surfer 版本变化时自动重置布局。旧版 VS Code 若缺少窗口命令则回退到并排并在输出中说明。
+0.2.2 起默认使用独立的 VS Code 编辑器窗口显示波形，代码留在原窗口。VS Code 设置中的 **NVC Runner: Waveform Window** 可选择 `newWindow`（独立窗口，默认）或 `beside`（并排）。0.3.1 修复了恢复布局后残留 `Not available` 的问题：自动清理失效信号引用，保留有效信号和视图设置。
+
+0.3.0 起，同一项目复用一个固定波形窗口；重跑保留已选信号、顺序、格式、游标和视图，关闭后重新打开也会恢复。可用 `nvcRunner.preserveWaveformLayout` 关闭恢复；Surfer 版本变化时自动重置布局。旧版 VS Code 若缺少窗口命令则回退到并排并在输出中说明。
 
 各阶段以参数数组直接启动可执行文件，不调用 shell：
 

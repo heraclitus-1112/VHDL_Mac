@@ -2,7 +2,7 @@
   "name": "nvc-runner",
   "displayName": "NVC Runner · VHDL 仿真",
   "description": "一键 NVC 仿真、输入激励生成、持久 Surfer 波形窗口与交互会话。",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "local-vhdl",
   "repository": {
     "type": "git",
