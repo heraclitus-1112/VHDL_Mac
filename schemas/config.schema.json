@@ -35,8 +35,9 @@
     },
     "stopTime": {
       "type": "string",
-      "pattern": "^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$",
-      "default": "1us"
+      "pattern": "^(all|[1-9][0-9]*(fs|ps|ns|us|ms|sec))$",
+      "default": "1us",
+      "description": "Use all to run until the simulation ends, or a positive integer time limit. Omitting this field retains the legacy 1us default."
     },
     "libraryPaths": {
       "description": "Search directories for existing compiled libraries, specified as workspace-relative or absolute paths.",

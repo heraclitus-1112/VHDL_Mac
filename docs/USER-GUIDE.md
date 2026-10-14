@@ -8,7 +8,7 @@ Since 0.2.2, successful simulations open Surfer waveforms in a separate VS Code 
 
 Open the design under test (`counter.vhd` in the example), press `⌘⇧P`, and run **NVC: Generate Testbench**. The wizard lets you configure each input port as a constant, timed changes, or a periodic clock. A timed sequence might be `0ns=0;20ns=1;100ns=0`; a vector value might be `x"A5"`. For a clock, set the initial value, start time, and full period.
 
-Review the preview and name the new testbench file. Existing files are never overwritten. Choose **Set as Simulation Top**, confirm compilation order and the time limit, then click ▶. The generator provides input stimulus. Add `assert` statements for functional checks; without checks, it reports only `STIMULUS_DONE`.
+Review the preview and name the new testbench file. Existing files are never overwritten. Choose **Set as Simulation Top**, confirm compilation order and the run mode, then click ▶. New generated targets default to Run All, while the generator keeps a numeric stimulus end time and calls `std.env.finish` at that time. Updating an existing target preserves Run All or a longer numeric limit and raises shorter limits to cover the stimulus. The generator provides input stimulus. Add `assert` statements for functional checks; without checks, it reports only `STIMULUS_DONE`.
 
 For the counter, use an end time of 300ns; clk with initial value 0, start 0ns, and period 10ns; rst changes `0ns=1;20ns=0`; en changes `0ns=0;20ns=1;100ns=0;130ns=1`; and the new file name `tb_counter_inputs`.
 
@@ -16,17 +16,21 @@ For the counter, use an end time of 300ns; clk with initial value 0, start 0ns, 
 
 1. Use **File → Open Folder** in VS Code to open the project folder containing your VHDL files, and trust the local project.
 2. Write a design file such as `counter.vhd` and a testbench such as `tb_counter.vhd`. Put clocks, resets, input changes, and checks in the testbench. NVC/Surfer does not provide a ModelSim-style window for drawing input stimulus directly.
-3. Open the Command Palette (`⌘⇧P`) and run **NVC: Configure VHDL Simulation**. Select the source files, order them by dependency, and enter the top-level testbench entity, VHDL standard, and stop time. The extension saves `vhdl.sim.json`; you can also edit the JSON directly.
+3. Open the Command Palette (`⌘⇧P`) and run **NVC: Configure VHDL Simulation**. Select the source files, order them by dependency, and enter the top-level testbench entity, VHDL standard, and run mode. New configurations default to **Run All**; reconfiguration retains the existing mode and numeric value. The extension saves `vhdl.sim.json`; you can also edit the JSON directly.
 
 ## Run the simulation
 
 Open any `.vhd` or `.vhdl` file and click **▶ NVC: Run VHDL Simulation** in the top-right corner, or click **NVC Simulation** in the status bar. The extension saves unsaved files in the selected project, then analyzes, elaborates, and runs the testbench. It creates a fresh FST and opens Surfer in a separate VS Code waveform window after a successful run.
 
+For a one-time run without the saved time limit, use **NVC: Run All** from the Command Palette, the VHDL editor overflow menu, or the Explorer context menu. It changes the in-memory configuration for this run only. Subsequent runs from the play button or status bar use the saved configuration. The output channel explicitly reports Run All or the numeric stop time.
+
+Run All ends on `finish` / `stop`, a terminating failure, or no future events. It cannot run beyond the testbench's own finish condition. A clock that schedules events forever needs a finish condition or cancellation using the progress notification or **NVC: Cancel VHDL Simulation**.
+
 In Surfer, expand a scope such as `tb_counter` on the left and select an instance. Click signal names under Variables to add them to the waveform on the right. Enlarge the editor group if needed. The example signals include `clk`, `rst`, `en`, and `count[3:0]`.
 
-Simulation output appears under **Output → NVC Simulation**. NVC errors with identifiable source locations appear in the **Problems** panel. A failed run does not update the waveform: the window keeps the previous successful result. Stop a run with **Cancel** in its progress notification or **NVC: Cancel VHDL Simulation**.
+Simulation output appears under **Output → NVC Simulation**. NVC errors with identifiable source locations appear in the **Problems** panel. A failed or cancelled run keeps the previous successful waveform and result record. If viewer delivery or result publication fails before commit, the stable viewer record and prior layout are restored. Cancellation after the atomic commit leaves the accepted result in place. Cleanup failures are reported as warnings. Stop a run with **Cancel** in its progress notification or **NVC: Cancel VHDL Simulation**.
 
-In `vhdl.sim.json`, `sources` defines compilation order, `top` names the testbench entity, and `stopTime` sets a duration such as `1us`. If a third party or instructor supplies precompiled libraries in a dedicated directory, add that directory to `libraryPaths`. The extension does not compile those libraries automatically. Vendor-specific libraries unsupported by NVC may still require the course's prescribed ModelSim/Questa environment.
+In `vhdl.sim.json`, `sources` defines compilation order, `top` names the testbench entity, and `stopTime` accepts the exact literal `"all"` or a positive integer duration such as `"1us"`. Omitting it retains the old `1us` default. The configuration wizard defaults a new project to Run All and preserves the mode and value of an existing configuration. If a third party or instructor supplies precompiled libraries in a dedicated directory, add that directory to `libraryPaths`. The extension does not compile those libraries automatically. Vendor-specific libraries unsupported by NVC may still require the course's prescribed ModelSim/Questa environment.
 
 ## Run segments and temporarily change inputs (0.3.0)
 

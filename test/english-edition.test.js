@@ -15,8 +15,9 @@ test('English edition ships English interface strings, documentation and example
       else if (entry.isFile() && /\.(js|json|md|tcl|sh|patch|vhd|vhdl)$/i.test(filename)) files.push(filename);
     }
   }
-  for (const directory of ['src', 'media', 'schemas', 'docs', 'examples', 'tools']) await visit(directory);
+  for (const directory of ['src', 'media', 'schemas', 'docs', 'examples', 'tools', 'test']) await visit(directory);
   for (const filename of files) assert.ok(!han.test(await fs.readFile(path.join(root, filename), 'utf8')), `English edition contains untranslated text: ${filename}`);
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
   assert.equal(manifest.contributes.commands.find(command => command.command === 'nvcRunner.run').title, 'NVC: Run VHDL Simulation');
+  assert.equal(manifest.contributes.commands.find(command => command.command === 'nvcRunner.runAll')?.title, 'NVC: Run All');
 });

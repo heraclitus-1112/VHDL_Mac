@@ -2,7 +2,7 @@
   "name": "nvc-runner",
   "displayName": "NVC Runner · VHDL Simulation",
   "description": "One-click NVC simulation, input stimulus generation, persistent Surfer waveform views, and interactive sessions.",
-  "version": "0.3.2",
+  "version": "0.4.1",
   "publisher": "local-vhdl",
   "repository": {
     "type": "git",
@@ -62,6 +62,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "nvcRunner.runAll",
+        "title": "NVC: Run All",
+        "icon": "$(play)"
+      },
+      {
         "command": "nvcRunner.cancel",
         "title": "NVC: Cancel VHDL Simulation",
         "icon": "$(debug-stop)"
@@ -110,6 +115,11 @@
           "command": "nvcRunner.run",
           "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
           "group": "navigation"
+        },
+        {
+          "command": "nvcRunner.runAll",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "nvcRunner@1"
         }
       ],
       "explorer/context": [
@@ -117,6 +127,11 @@
           "command": "nvcRunner.generateTestbench",
           "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
           "group": "navigation"
+        },
+        {
+          "command": "nvcRunner.runAll",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "nvcRunner@1"
         }
       ]
     },

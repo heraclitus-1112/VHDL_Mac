@@ -97,7 +97,7 @@ async function setSimulationTarget(vscode, root, result) {
       const next = await vscode.window.showQuickPick(remaining, { title: `Confirm source file order ${ordered.length + 1}/${chosen.length}`, placeHolder: 'Select dependencies first, then the design under test; the new testbench is added last.', ignoreFocusOut: true });
       if (next === undefined) return; ordered.push(next); remaining.splice(remaining.indexOf(next), 1);
     }
-    config = { sources: ordered, top: result.name, standard: '2008', stopTime: result.duration, libraryPaths: [] };
+    config = { sources: ordered, top: result.name, standard: '2008', stopTime: 'all', libraryPaths: [] };
   }
   const retained = [], missing = [];
   for (const item of config.sources.filter(item => item !== generated)) {
@@ -107,10 +107,10 @@ async function setSimulationTarget(vscode, root, result) {
   config = { ...config, sources: retained };
   if (!config.sources.includes(source)) config.sources.push(source);
   config.sources.push(generated); config.top = result.name; config.standard = '2008';
-  if (tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
+  if (config.stopTime !== 'all' && tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
   core.validateConfig(config); await core.resolveProject(root, config);
   const cleanup = missing.length ? `\nDeleted source files will be removed from the configuration: ${missing.join(', ')}. If these dependencies are still needed, cancel and reconfigure.` : '';
-  if (await vscode.window.showInformationMessage(`Set simulation top to ${config.top}, using VHDL-2008 with a stop time of ${config.stopTime}?\nCompilation order: ${config.sources.join(' → ')}\nExisting library paths are preserved.${cleanup}`, { modal: true }, 'Apply') !== 'Apply') return;
+  if (await vscode.window.showInformationMessage(`Set top to ${config.top}, VHDL-2008, ${config.stopTime === 'all' ? 'Run All' : `limit ${config.stopTime}`}?\nCompilation order: ${config.sources.join(' → ')}\nExisting library directories will be preserved.${cleanup}`, { modal: true }, 'Apply') !== 'Apply') return;
   // Recheck after user interaction; never replace a symlink or dirty editor buffer.
   try { const info = await fs.lstat(filename); if (!info.isFile() || info.isSymbolicLink()) throw new Error('vhdl.sim.json must be a regular file.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (vscode.workspace.textDocuments.some(doc => doc.isDirty && doc.uri.fsPath === filename)) throw new Error('The configuration has unsaved changes; the update was stopped.');

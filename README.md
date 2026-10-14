@@ -13,17 +13,17 @@ brew install nvc
 git clone --branch english https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.3.2-en.vsix
+code --install-extension packages/nvc-runner-0.4.1-en.vsix
 code examples/counter
 ```
 
 If `code` is not on your PATH, run **Shell Command: Install 'code' command in PATH** from the VS Code Command Palette, or select **Install from VSIX** in the Extensions view.
 
-The English VSIX uses manifest version `0.3.2` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
+The English VSIX uses manifest version `0.4.1` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
 
 ```sh
 git clone --branch main https://github.com/heraclitus-1112/VHDL_Mac.git VHDL_Mac-Chinese
-code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.3.1.vsix --force
+code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.4.0.vsix --force
 ```
 
 Open `examples/counter/tb_counter.vhd` and click ▶ in the top-right corner to run the configured example. NVC should print `TB_PASS`, and Surfer should open the waveform in a separate window. Select a scope, then click signal names under Variables to add them to the waveform. See the [user guide](docs/USER-GUIDE.md) for detailed instructions.
@@ -34,9 +34,13 @@ This repository provides extension source and a prebuilt VSIX. Install NVC and t
 
 1. Install NVC and the official `surfer-project.surfer` extension. Use VS Code 1.85 or later and a trusted local workspace.
 2. Open a folder containing the design and testbench, then run **NVC: Configure VHDL Simulation**.
-3. Select the source files, specify their compilation order, and confirm the top-level testbench entity, VHDL standard, and stop time.
+3. Select the source files, specify their compilation order, and confirm the top-level testbench entity, VHDL standard, and run mode. New configurations default to **Run All**; existing configurations retain their numeric limit or Run All mode.
 4. Open a `.vhd` or `.vhdl` file and click the editor's play button or **NVC Simulation** in the status bar.
 5. Select the signals to observe in Surfer, which provides its own signal-selection interface.
+
+Run **NVC: Run All** from the Command Palette, the VHDL editor overflow menu, or the Explorer context menu to run until the testbench ends. It overrides the saved stop time for that run only; the play button and status bar continue to use the saved configuration. The output channel identifies the selected run mode.
+
+Run All stops when the testbench calls `finish` / `stop`, a terminating failure occurs, or no future events remain. A periodic clock without a finish condition can run indefinitely. Cancel it from the progress notification or **NVC: Cancel VHDL Simulation**; Run All does not bypass a testbench finish condition.
 
 Each workspace root uses `vhdl.sim.json`:
 
@@ -45,7 +49,7 @@ Each workspace root uses `vhdl.sim.json`:
   "sources": ["counter.vhd", "tb_counter.vhd"],
   "top": "tb_counter",
   "standard": "2008",
-  "stopTime": "1us",
+  "stopTime": "all",
   "libraryPaths": []
 }
 ```
@@ -64,13 +68,13 @@ Set the end time, then choose a stimulus mode for each `in` port:
 
 Vectors accept decimal values, `"0101"` / `0b0101`, and `x"A5"` / `0xA5`. Binary and hexadecimal values must match the full bit width; decimal values are checked against the signed or unsigned range. Periodic clocks support only `std_logic`. Times use a nonnegative integer followed by fs/ps/ns/us/ms/sec. Input changes must occur before the end time.
 
-Confirm the new entity name and review the preview. The wizard creates a `.vhd` file with that name in the workspace root and never overwrites an existing file. Choose **Set as Simulation Top**, confirm compilation order, standard, and time limit, then click ▶. Existing library paths are preserved. For an unconfigured project, first select the dependency source files and confirm their order. Generated testbenches use VHDL-2008.
+Confirm the new entity name and review the preview. The wizard creates a `.vhd` file with that name in the workspace root and never overwrites an existing file. Choose **Set as Simulation Top**, confirm compilation order, standard, and run mode, then click ▶. A newly configured generated target defaults to Run All. The generator still requires a numeric end time and emits `std.env.finish` at that time, including when periodic clocks are present. Updating an existing target preserves Run All or a longer numeric limit; a shorter numeric limit is raised to cover the generated stimulus. Existing library paths are preserved. For an unconfigured project, first select the dependency source files and confirm their order. Generated testbenches use VHDL-2008.
 
 Supported interfaces include std_logic, std_logic_vector, signed, unsigned, boolean, basic integer types and integer ranges, simple integer generics, and `+ - * /` expressions in bit widths. Custom types, complex generics, inout/buffer ports, extended identifiers, and other unsupported constructs produce an explanation. Output ports are connected for observation and are never driven by the generator. The generator supplies **input stimulus**; add `assert` statements to check expected outputs against the design requirements. Without output assertions, completion reports `STIMULUS_DONE: no output assertions configured`, not a test pass.
 
 For the counter example, use a 10ns periodic clk; rst changes `0ns=1;20ns=0`; en changes `0ns=0;20ns=1;100ns=0;130ns=1`; an end time of 300ns; and the file name `tb_counter_inputs`.
 
-`sources` must list existing `.vhd` / `.vhdl` files inside the workspace in compilation order. Neither `..` nor symbolic links may escape the workspace. `top` is a basic top-level entity name without a library prefix. `standard` accepts `1993`, `2002`, or `2008`, with `2008` as the default. `stopTime` is a positive integer followed by `fs`, `ps`, `ns`, `us`, `ms`, or `sec`; the default is `1us`. `libraryPaths` lists existing library directories, using relative or absolute paths. The extension does not compile external libraries automatically.
+`sources` must list existing `.vhd` / `.vhdl` files inside the workspace in compilation order. Neither `..` nor symbolic links may escape the workspace. `top` is a basic top-level entity name without a library prefix. `standard` accepts `1993`, `2002`, or `2008`, with `2008` as the default. `stopTime` accepts the exact literal `all`, or a positive integer followed by `fs`, `ps`, `ns`, `us`, `ms`, or `sec`. Omitting the field retains the legacy `1us` default. Values such as `ALL`, surrounding whitespace, and decimal durations are invalid. `libraryPaths` lists existing library directories, using relative or absolute paths. The extension does not compile external libraries automatically.
 
 The configuration wizard ignores `.nvc-build`, `.git`, `node_modules`, `build`, `dist`, `out`, and `.vscode-test`, and does not scan symbolic links. Canceling the wizard leaves the configuration untouched. An existing configuration is overwritten only after you choose **Replace**.
 
@@ -92,9 +96,11 @@ nvc --std=2008 --work=work:<project>/.nvc-build/work -e tb_counter
 nvc --std=2008 --work=work:<project>/.nvc-build/work -r tb_counter --stop-time=1us --wave=<unique.fst>
 ```
 
+Run All uses the same analysis and elaboration commands and omits only `--stop-time` from simulation.
+
 Library directories are passed as `-L <directory>` to every stage. A failed stage stops the run. The `nvcRunner.waveformViewer` editor is updated only after all stages succeed and the current run's new FST exists and is nonempty. It uses rendering resources from the installed official Surfer extension. Each run uses a unique FST filename so an old editor cannot be mistaken for the current result.
 
-Build artifacts stay in `.nvc-build`. Neither that directory nor its `work` subdirectory may be a symbolic link. The extension deletes only its previous waveform recorded in `.nvc-runner.json`, preserving other files. A failed run leaves the last displayed waveform intact; that waveform represents the previous successful run. Check **NVC Simulation** output for the current run's status.
+Build artifacts stay in `.nvc-build`. Neither that directory nor its `work` subdirectory may be a symbolic link. The extension deletes only its previous waveform recorded in `.nvc-runner.json`, preserving other files. A failed or cancelled run preserves the previous waveform and successful result record. The viewer must accept the result before its record is committed; a failed handoff or precommit cancellation restores the previous viewer marker and layout. Cancellation after the atomic commit retains the accepted result. Cleanup failures appear as warnings without rejecting an accepted result. The retained waveform represents the previous successful run when the current run fails. Check **NVC Simulation** output for the current run's status.
 
 All NVC output appears in the **NVC Simulation** output channel. Source errors and warnings with parseable file, line, and column locations appear in the **Problems** panel. If configuration is missing, run the configuration command. If NVC cannot be found, set `nvcRunner.nvcPath` to its full executable path. An empty setting searches `PATH`, `/opt/homebrew/bin/nvc`, and `/usr/local/bin/nvc`. Trust the workspace before running.
 
@@ -102,7 +108,7 @@ The extension generates input-stimulus testbenches for supported interfaces and 
 
 ## Interactive simulation (0.3.0)
 
-The normal ▶ button runs the complete testbench. For incremental advancement, pauses, and temporary input overrides, run **NVC: Start Interactive Simulation**. After compilation, the session runs an initial 100ns, or stops at the actual finish time if the testbench finishes earlier. Controls appear above the waveform in the same window:
+The normal ▶ button uses the configured Run All mode or numeric stop time. For incremental advancement, pauses, and temporary input overrides, run **NVC: Start Interactive Simulation**. After compilation, the session runs an initial 100ns, or stops at the actual finish time if the testbench finishes earlier. Controls appear above the waveform in the same window:
 
 | Button | Action |
 |---|---|
@@ -131,6 +137,6 @@ Layouts are stored locally in VS Code workspace state for each project and are n
 
 There are no third-party runtime dependencies. The extension uses CommonJS and Node built-in modules. Run `npm test` or `node --test test/*.test.js`. [Test evidence](test/TEST-EVIDENCE.md) records the sequence of failing and passing tests. Tests use real short-lived Node child processes to check stage short-circuiting, cancellation, and fresh waveforms. VS Code adapter tests use lightweight substitutes only for host APIs unavailable directly in Node.
 
-`src/core.js` exports `validateConfig(data)`, `resolveProject(projectDir, data)`, `discoverSources(projectDir)`, `buildStageArgs(resolvedConfig, buildDir, wavePath)`, `runSimulation(options)`, `parseDiagnostics(output, projectDir)`, and `resolveNvc(override)`. `runSimulation` returns `{ wavePath, output, projectDir }` and throws on failure. It supports `AbortSignal`, `onOutput`, and `onStage`.
+`src/core.js` exports `validateConfig(data)`, `resolveProject(projectDir, data)`, `discoverSources(projectDir)`, `buildStageArgs(resolvedConfig, buildDir, wavePath)`, `runSimulation(options)`, `parseDiagnostics(output, projectDir)`, and `resolveNvc(override)`. `runSimulation` returns `{ wavePath, output, projectDir }` and throws on failure. It supports `AbortSignal`, `onOutput`, `onStage`, and an asynchronous `onResult` handoff. The handoff may return a rollback function to restore the viewer if publication fails before commit.
 
 Separate acceptance tests cover real NVC, the VS Code Extension Host, and the official Surfer viewer. Passing Node unit tests alone does not establish that the waveform UI displays correctly.

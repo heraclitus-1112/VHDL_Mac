@@ -53,3 +53,11 @@ Failing waveform-module tests preceded implementation. All 43 tests passed, cove
 ## English edition
 
 The English edition keeps the recorded feature and acceptance boundaries. Translating this document does not rerun those historical acceptance checks. The edition's current automated checks are run separately during packaging and are reported by that task.
+
+## 0.4.1 English edition: Run All synchronization (2026-10-14)
+
+- English equivalents of the approved Run All feature and transaction regressions were added before production changes. The first targeted run covered 73 tests: 40 passed and 33 failed. Failures demonstrated missing literal `all` support, schema acceptance, the `nvcRunner.runAll` command, wizard defaults, result handoff rollback, and viewer cancellation/cleanup handling.
+- The approved implementation was ported while retaining English runtime messages, stable mode identifiers, configuration keys, and the official Surfer protocol. A translation-only warning assertion was corrected to match the English cleanup message.
+- The full `node --test --test-reporter=spec test/*.test.js` run passed all 97 tests, with zero failures and zero skips. Real batch NVC tests exercised natural completion beyond a numeric limit, finish with a periodic clock, cancellation of an endless clock, and generated numeric-duration finish in Run All mode. Persistent interactive and existing waveform regressions also passed.
+- The English-language test now scans the test directory as well as runtime source, schemas, documentation, tools, and examples, and verifies the exact `NVC: Run All` command title.
+- English VSIX packaging and real VS Code GUI acceptance are separate steps; this source verification did not install a VSIX or exercise the English UI in VS Code.

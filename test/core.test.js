@@ -101,3 +101,98 @@ test('array dumping is validated and included only in the simulation command',()
   assert.ok(args.slice(0,2).every(stage=>!stage.args.some(arg=>arg.startsWith('--dump-arrays'))));
   for(const value of [-1,1.5,1000001,'1024'])assert.throws(()=>core.validateConfig({...config,dumpArrays:value}));
 });
+
+
+test('all stop time is accepted literally and omits only the stop-time argument', () => {
+  const input = {...config, stopTime:'all', dumpArrays:1024};
+  const validated = core.validateConfig(input);
+  assert.equal(validated.stopTime, 'all');
+  const allArgs = core.buildStageArgs(validated, '/tmp/build', '/tmp/current.fst');
+  const timedArgs = core.buildStageArgs({...validated, stopTime:'2us'}, '/tmp/build', '/tmp/current.fst');
+  assert.deepEqual(allArgs, timedArgs.map(stage => ({...stage, args:stage.args.filter(arg => !arg.startsWith('--stop-time='))})));
+  assert.deepEqual(input, {...config, stopTime:'all', dumpArrays:1024});
+  for (const value of ['ALL',' all','all ','all;rm','infinite',1]) assert.throws(() => core.validateConfig({...config,stopTime:value}));
+});
+test('schema accepts all and numeric durations while retaining omitted-field compatibility', async () => {
+  const schema = JSON.parse(await fs.readFile(path.join(__dirname,'../schemas/config.schema.json'),'utf8'));
+  const field = schema.properties.stopTime;
+  assert.equal(field.type,'string'); assert.equal(field.default,'1us');
+  for (const value of ['all','1us','10sec']) assert.ok(new RegExp(field.pattern).test(value), value);
+  for (const value of ['ALL','0ns','all;rm','1.2ns']) assert.ok(!new RegExp(field.pattern).test(value), value);
+});
+
+test('rejected result handoff preserves prior waveform and successful result record',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8');
+  let handedOff=false;
+  await assert.rejects(core.runSimulation({...options,onResult:async result=>{
+    handedOff=true;assert.ok((await fs.stat(result.wavePath)).size>0);assert.ok((await fs.stat(prior.wavePath)).size>0);
+    throw new Error('viewer refused result');
+  }}),/viewer refused result/);
+  assert.equal(handedOff,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+test('cancellation during async result handoff preserves prior waveform and record',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8'),controller=new AbortController();
+  let handedOff=false;
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal,onResult:async()=>{
+    handedOff=true;await new Promise(resolve=>setImmediate(resolve));controller.abort();
+  }}),error=>error.name==='AbortError');
+  assert.equal(handedOff,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+
+test('cancellation while preparing result publication cannot delete the previous waveform',async t=>{
+  const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options);
+  const marker=path.join(root,'.nvc-build','.nvc-runner.json'),snapshot=await fs.readFile(marker,'utf8'),controller=new AbortController();
+  const writeFile=fs.writeFile;let intercepted=false;
+  t.after(()=>{fs.writeFile=writeFile;});
+  fs.writeFile=async(filename,...args)=>{
+    const result=await writeFile(filename,...args);
+    if(path.dirname(filename)===path.join(root,'.nvc-build')&&path.basename(filename).startsWith('.result-')){intercepted=true;controller.abort();}
+    return result;
+  };
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal}),error=>error.name==='AbortError');
+  assert.equal(intercepted,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+  assert.equal(await fs.readFile(marker,'utf8'),snapshot);
+});
+
+test('result handoff rollback is called if cancellation occurs before the commit',async t=>{
+ const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options),controller=new AbortController();
+ let restored=false;
+ await assert.rejects(core.runSimulation({...options,signal:controller.signal,onResult:async()=>{
+  controller.abort();return async()=>{restored=true;};
+ }}),error=>error.name==='AbortError');
+ assert.equal(restored,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
+});
+
+test('postcommit old-wave cleanup failure warns while returning the accepted result',async t=>{
+ const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options),output=[];
+ const unlink=fs.unlink;t.after(()=>{fs.unlink=unlink;});
+ fs.unlink=async filename=>{if(filename===prior.wavePath)throw Object.assign(new Error('old wave cleanup refused'),{code:'EACCES'});return unlink(filename);};
+ const result=await core.runSimulation({...options,onOutput:text=>output.push(text)});
+ assert.notEqual(result.wavePath,prior.wavePath);assert.ok((await fs.stat(result.wavePath)).size>0);assert.ok((await fs.stat(prior.wavePath)).size>0);
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
+ assert.match(output.join(''),/Warning.*old wave cleanup refused/);assert.match(result.output,/Warning.*old wave cleanup refused/);
+});
+test('postcommit temporary cleanup failure cannot reject the accepted result',async t=>{
+ const root=await fixture(t),options=await simulator(root),output=[],rm=fs.rm;t.after(()=>{fs.rm=rm;});
+ fs.rm=async(filename,...args)=>{if(path.basename(filename).startsWith('.result-'))throw new Error('temporary cleanup refused');return rm(filename,...args);};
+ const result=await core.runSimulation({...options,onOutput:text=>output.push(text)});
+ assert.ok((await fs.stat(result.wavePath)).size>0);
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
+ assert.match(output.join(''),/Warning.*temporary cleanup refused/);
+});
+test('precommit errors and AbortError remain primary when temporary cleanup also fails',async t=>{
+ for(const mode of ['diagnostic','abort']){
+  const root=await fixture(t),options=await simulator(root),controller=new AbortController(),output=[];
+  const rm=fs.rm;t.after(()=>{fs.rm=rm;});
+  fs.rm=async(filename,...args)=>{if(path.dirname(filename)===path.join(root,'.nvc-build')&&path.basename(filename).startsWith('.result-'))throw new Error('secondary cleanup refused');return rm(filename,...args);};
+  const primary=Object.assign(new Error('primary viewer error'),{output:'original diagnostics'});
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal,onOutput:text=>output.push(text),onResult:async()=>{
+   if(mode==='abort')controller.abort();else throw primary;
+  }}),error=>mode==='abort'?error.name==='AbortError':error===primary&&error.output==='original diagnostics');
+  assert.match(output.join(''),/Warning.*secondary cleanup refused/);fs.rm=rm;
+ }
+});

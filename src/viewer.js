@@ -11,27 +11,73 @@ class SurferViewer {
   }
   openCustomDocument(uri) { return { uri, dispose() {} }; }
   stateKey(root) { return `surfer-layout:${root}`; }
-  async show({ projectDir, wavePath }, mode = 'newWindow', preserve = true) {
+  async show({ projectDir, wavePath }, mode = 'newWindow', preserve = true, signal) {
+    const checkCancellation = () => { if (signal?.aborted) { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; throw error; } };
+    checkCancellation();
     const root = await fs.realpath(projectDir), build = path.join(root, '.nvc-build');
     if (await fs.realpath(build) !== build) throw new Error('The waveform directory must not be a symbolic link.');
     const wave = await fs.realpath(wavePath);
     if (!within(build, wave) || !(await fs.stat(wave)).isFile()) throw new Error('The waveform must be a file inside the current project build directory.');
     const marker = path.join(build, 'waveform.nvcwave');
-    try { const info = await fs.lstat(marker); if (info.isSymbolicLink() || !info.isFile()) throw new Error('The waveform viewer record must not be a symbolic link or directory.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
-    try { await fs.writeFile(temporary, JSON.stringify({ wave: path.relative(build, wave), preserve }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
+    let previousMarker;
+    try {
+      const info = await fs.lstat(marker);
+      if (info.isSymbolicLink() || !info.isFile()) throw new Error('The waveform viewer record must not be a symbolic link or directory.');
+      previousMarker = await fs.readFile(marker, 'utf8');
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const old = this.entries.get(marker);
-    if (old) {
-      if (old.loaded) await this.snapshot(old);
-      old.wave = wave; old.preserve = preserve; old.panel.reveal(undefined, false);
-      if (old.ready) await this.load(old);
-      return;
+    const previousEntry = old && { wave: old.wave, preserve: old.preserve, loaded: old.loaded, loadId: old.loadId };
+    const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
+    let published = false, updated = false, previousLayout;
+    const rollback = async () => {
+      if (!published) return;
+      // Restore the stable record and prior entry if delivery or the caller's commit fails.
+      if (previousMarker === undefined) await fs.rm(marker, { force: true });
+      else { await fs.writeFile(temporary, previousMarker, { flag: 'wx' }); await fs.rename(temporary, marker); }
+      published = false;
+      const current = this.entries.get(marker);
+      if (old && current === old) {
+        Object.assign(old, previousEntry);
+        if (updated && old.ready) try {
+          if (previousLayout) await this.context.workspaceState?.update(this.stateKey(root), previousLayout);
+          old.loaded = false;
+          await this.load(old, { state: previousLayout?.version === old.version ? previousLayout.state : undefined });
+        } catch (restoreError) { this.warning(`Failed to restore the previous waveform: ${restoreError.message}`); }
+      } else if (current) { this.entries.delete(marker); current.panel.dispose?.(); }
+    };
+    try {
+      checkCancellation();
+      await fs.writeFile(temporary, JSON.stringify({ wave: path.relative(build, wave), preserve }), { flag: 'wx' });
+      checkCancellation();
+      await fs.rename(temporary, marker); published = true;
+      checkCancellation();
+      if (old) {
+        if (old.loaded) await this.snapshot(old);
+        const storedLayout = this.context.workspaceState?.get(this.stateKey(root));
+        previousLayout = storedLayout && { version: storedLayout.version, state: storedLayout.state };
+        checkCancellation();
+        updated = true;
+        old.wave = wave; old.preserve = preserve; old.panel.reveal(undefined, false);
+        if (old.ready) await this.load(old);
+        checkCancellation();
+        return rollback;
+      }
+      const uri = this.vscode.Uri.file(marker);
+      let separate = mode !== 'beside';
+      if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('This version of VS Code does not support separate editor windows. The waveform is shown beside the code.'); separate = false; }
+      checkCancellation();
+      await this.vscode.commands.executeCommand('vscode.openWith', uri, viewType, { viewColumn: separate ? this.vscode.ViewColumn.Active : this.vscode.ViewColumn.Beside, preview: false });
+      checkCancellation();
+      if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`Could not open a separate window: ${error.message}`); }
+      checkCancellation();
+      return rollback;
+    } catch (error) {
+      await rollback();
+      throw error;
+    } finally {
+      try { await fs.rm(temporary, { force: true }); }
+      catch (error) { this.warning(`Failed to clean up the temporary waveform window record: ${error.message}`); }
     }
-    const uri = this.vscode.Uri.file(marker);
-    let separate = mode !== 'beside';
-    if (separate && !(await this.vscode.commands.getCommands(true)).includes('workbench.action.moveEditorToNewWindow')) { this.warning('This version of VS Code does not support separate editor windows. The waveform is shown beside the code.'); separate = false; }
-    await this.vscode.commands.executeCommand('vscode.openWith', uri, viewType, { viewColumn: separate ? this.vscode.ViewColumn.Active : this.vscode.ViewColumn.Beside, preview: false });
-    if (separate) try { await this.vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow', uri); } catch (error) { this.warning(`Could not open a separate window: ${error.message}`); }
   }
   async resolveCustomEditor(document, panel) {
     const marker = document.uri.fsPath, root = path.dirname(path.dirname(marker));
@@ -76,9 +122,9 @@ class SurferViewer {
     // Assets stay owned by the official extension. No network scripts or redistribution.
     panel.webview.html = await this.html(uri('surfer.js'), uri('surfer_bg.wasm'));
   }
-  async load(entry) {
+  async load(entry, restoreOverride) {
     const stored = this.context.workspaceState?.get(this.stateKey(entry.root));
-    const restore = !entry.loaded && entry.preserve && stored?.version === entry.version ? stored.state : undefined;
+    const restore = restoreOverride ? restoreOverride.state : !entry.loaded && entry.preserve && stored?.version === entry.version ? stored.state : undefined;
     if (!entry.loaded && stored && stored.version !== entry.version) this.warning('The Surfer version has changed. The waveform layout will be reset.');
     const keep = entry.loaded && entry.preserve;
     entry.loaded = false;

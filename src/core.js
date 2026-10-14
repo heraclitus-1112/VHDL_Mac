@@ -21,7 +21,7 @@ function validateConfig(data) {
   const standard = data.standard ?? '2008';
   if (!['1993', '2002', '2008'].includes(standard)) throw new Error('standard must be 1993, 2002, or 2008.');
   const stopTime = data.stopTime ?? '1us';
-  if (typeof stopTime !== 'string' || !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime)) throw new Error('stopTime must be a positive integer followed by fs/ps/ns/us/ms/sec, for example 1us.');
+  if (typeof stopTime !== 'string' || (stopTime !== 'all' && !/^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(stopTime))) throw new Error('stopTime must be all (Run All) or a positive integer followed by fs/ps/ns/us/ms/sec, for example 1us.');
   const libraryPaths = data.libraryPaths ?? [];
   if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths must be an array of valid directory paths.');
   if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays must be an integer from 0 to 1000000; 0 disables array dumping.');
@@ -72,7 +72,7 @@ function buildStageArgs(config, buildDir, wavePath) {
   return [
     { stage: 'analysis', args: [...common, '-a', ...config.sources] },
     { stage: 'elaboration', args: [...common, '-e', config.top] },
-    { stage: 'simulation', args: [...common, '-r', config.top, `--stop-time=${config.stopTime}`, `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
+    { stage: 'simulation', args: [...common, '-r', config.top, ...(config.stopTime === 'all' ? [] : [`--stop-time=${config.stopTime}`]), `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
   ];
 }
 function abortError() { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; return error; }
@@ -94,15 +94,15 @@ function executeStage(executable, args, cwd, signal, onOutput) {
     if (signal?.aborted) cancel();
   });
 }
-async function cleanOwnedWave(buildDir) {
+async function ownedWave(buildDir) {
   const marker = path.join(buildDir, '.nvc-runner.json');
   try {
     if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('The build record cannot be a symbolic link.');
     const previous = JSON.parse(await fs.readFile(marker, 'utf8'));
-    if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) await fs.unlink(path.join(buildDir, previous.wave)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) return path.join(buildDir, previous.wave);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-async function runSimulation({ executable, executableArgs = [], projectDir, config, signal, onOutput, onStage }) {
+async function runSimulation({ executable, executableArgs = [], projectDir, config, signal, onOutput, onStage, onResult }) {
   if (signal?.aborted) throw abortError();
   const resolved = await resolveProject(projectDir, config);
   await fs.mkdir(resolved.buildDir, { recursive: true });
@@ -119,11 +119,36 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   if (signal?.aborted) throw abortError();
   let stat; try { stat = await fs.lstat(wavePath); } catch { throw new Error('NVC did not generate a new waveform for this run. Check the testbench and NVC output.'); }
   if (!stat.isFile() || stat.size === 0) throw new Error('The waveform for this run is empty or is not a regular file. Check the testbench and NVC output.');
-  // Keep the last successful result accessible when analysis or simulation fails.
-  await cleanOwnedWave(resolved.buildDir);
+  // Keep the previous file until the consumer has accepted this result.
+  const previousWave = await ownedWave(resolved.buildDir);
+  if (signal?.aborted) throw abortError();
+  const result = { wavePath, output, projectDir: resolved.projectDir };
   const temporary = path.join(resolved.buildDir, `.result-${randomUUID()}.tmp`);
-  try { await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' }); await fs.rename(temporary, marker); } finally { await fs.rm(temporary, { force: true }); }
-  return { wavePath, output, projectDir: resolved.projectDir };
+  let rollback, failure, committed = false;
+  const warn = (message, error) => {
+    const text = `Warning: ${message}: ${error.message}\n`;
+    result.output += text; onOutput?.(text);
+  };
+  try {
+    await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' });
+    if (signal?.aborted) throw abortError();
+    rollback = await onResult?.(result);
+    if (signal?.aborted) throw abortError();
+    // Atomic publication is the commit point. Later cancellation does not undo acceptance.
+    await fs.rename(temporary, marker); committed = true;
+  } catch (error) {
+    failure = error;
+    if (typeof rollback === 'function') try { await rollback(); } catch (restoreError) { warn('Failed to restore the previous waveform', restoreError); }
+    throw error;
+  } finally {
+    try { await fs.rm(temporary, { force: true }); }
+    catch (error) {
+      if (committed || failure) warn(`Failed to clean up the temporary result record (${temporary})`, error);
+      else throw error;
+    }
+  }
+  if (previousWave) await fs.unlink(previousWave).catch(error => { if (error.code !== 'ENOENT') warn(`Failed to clean up the previous waveform; retaining ${previousWave}`, error); });
+  return result;
 }
 function parseDiagnostics(output, projectDir) {
   const results = []; let pending;

@@ -85,6 +85,12 @@ function createExtension(vscode, context) {
   async function configure(uri) {
     const saved = await withProject(uri, false, async (_, root) => {
       const filename = await configPath(root);
+      let previousStopTime;
+      try {
+        const previous = JSON.parse(await fs.readFile(filename, 'utf8'));
+        const value = previous?.stopTime ?? '1us';
+        if (value === 'all' || typeof value === 'string' && /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value)) previousStopTime = value;
+      } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
       const sources = await core.discoverSources(root);
       if (!sources.length) throw new Error('The workspace has no .vhd/.vhdl source files. Create a design and testbench first.');
       const selected = await vscode.window.showQuickPick(sources, { title: 'Select source files for simulation', canPickMany: true, ignoreFocusOut: true });
@@ -99,8 +105,20 @@ function createExtension(vscode, context) {
       const top = await vscode.window.showInputBox({ title: 'Confirm the top-level testbench entity name', value: path.basename(ordered.at(-1)).replace(/\.vhdl?$/i, ''), ignoreFocusOut: true, validateInput: value => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(value) ? undefined : 'Enter a valid VHDL basic entity name' });
       if (top === undefined) return;
       const standard = await vscode.window.showQuickPick(['2008', '2002', '1993'], { title: 'Select the VHDL standard', ignoreFocusOut: true }); if (!standard) return;
-      const stopTime = await vscode.window.showInputBox({ title: 'Simulation stop time', value: '1us', ignoreFocusOut: true, validateInput: value => /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value) ? undefined : 'A positive integer followed by fs/ps/ns/us/ms/sec, for example 1us' });
-      if (stopTime === undefined) return;
+      const defaultMode = previousStopTime === undefined || previousStopTime === 'all' ? 'all' : 'time';
+      const modes = [
+        { id: 'all', label: 'Run All', description: 'Run until finish, a terminating failure, or no future events', picked: defaultMode === 'all' },
+        { id: 'time', label: 'Run until specified time', description: 'Use a positive integer time limit', picked: defaultMode === 'time' }
+      ];
+      // The current mode is first so the single-choice picker initially selects it.
+      modes.sort((a, b) => Number(b.picked) - Number(a.picked));
+      const mode = await vscode.window.showQuickPick(modes, { title: 'Select simulation run mode', ignoreFocusOut: true });
+      if (!mode) return;
+      let stopTime = 'all';
+      if (mode.id === 'time') {
+        stopTime = await vscode.window.showInputBox({ title: 'Simulation stop time', value: previousStopTime && previousStopTime !== 'all' ? previousStopTime : '1us', ignoreFocusOut: true, validateInput: value => /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value) ? undefined : 'A positive integer followed by fs/ps/ns/us/ms/sec, for example 1us' });
+        if (stopTime === undefined) return;
+      }
       const config = core.validateConfig({ sources: ordered, top, standard, stopTime, libraryPaths: [] });
       await core.resolveProject(root, config);
       try {
@@ -117,7 +135,7 @@ function createExtension(vscode, context) {
     });
     if (saved) await vscode.window.showInformationMessage('VHDL simulation configuration saved. Click the play button to run.');
   }
-  async function run(uri) {
+  async function run(uri, stopTimeOverride) {
     return withProject(uri, true, async (folder, root, controller) => {
       // Reject unsafe configuration before saving (it may alias a user's VHDL source).
       const filename = await configPath(root);
@@ -129,22 +147,25 @@ function createExtension(vscode, context) {
         if (error instanceof SyntaxError) throw new Error(`Invalid JSON in vhdl.sim.json: ${error.message}`);
         throw error;
       }
-      core.validateConfig(config);
+      config = core.validateConfig(config);
+      if (stopTimeOverride === 'all') config = { ...config, stopTime: 'all' };
       const executable = await core.resolveNvc(vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('nvcPath', ''));
       const surfer = vscode.extensions.getExtension('surfer-project.surfer');
       if (!surfer) throw new Error('The official Surfer extension is missing. Install surfer-project.surfer and try again.');
       output.show(true); output.appendLine(`\nProject: ${root}\nNVC: ${executable}`);
+      output.appendLine(config.stopTime === 'all' ? 'Run mode: Run All' : `Run mode: Run until specified time (${config.stopTime})`);
       return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'NVC VHDL Simulation', cancellable: true }, async (progress, token) => {
         const disposable = token.onCancellationRequested(() => controller.abort());
         if (token.isCancellationRequested) controller.abort();
         try {
           checkTrust();
-          const result = await core.runSimulation({ executable, projectDir: root, config, signal: controller.signal, onOutput: text => output.append(text), onStage: (stage, args) => { progress.report({ message: { analysis: 'Analyzing source files', elaboration: 'Elaborating the testbench', simulation: 'Running simulation' }[stage] }); output.appendLine(`\n${executable} ${args.map(arg => JSON.stringify(arg)).join(' ')}`); } });
-          updateDiagnostics(result.output, root);
-          await surfer.activate();
-          if (controller.signal.aborted) { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; throw error; }
-          const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
-          await viewer.show(result, windowMode, vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('preserveWaveformLayout', true));
+          const result = await core.runSimulation({ executable, projectDir: root, config, signal: controller.signal, onOutput: text => output.append(text), onStage: (stage, args) => { progress.report({ message: { analysis: 'Analyzing source files', elaboration: 'Elaborating the testbench', simulation: 'Running simulation' }[stage] }); output.appendLine(`\n${executable} ${args.map(arg => JSON.stringify(arg)).join(' ')}`); }, onResult: async pending => {
+            updateDiagnostics(pending.output, root);
+            await surfer.activate();
+            if (controller.signal.aborted) { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; throw error; }
+            const windowMode = vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('waveformWindow', 'newWindow');
+            return viewer.show(pending, windowMode, vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('preserveWaveformLayout', true), controller.signal);
+          } });
           output.appendLine(`\nWaveform: ${result.wavePath}`);
           return result;
         } catch (error) { if (error.output !== undefined) updateDiagnostics(error.output, root); throw error; }
@@ -152,6 +173,7 @@ function createExtension(vscode, context) {
       });
     });
   }
+  function runAll(uri) { return run(uri, 'all'); }
   async function cancel(uri) {
     const folder = await selectFolder(uri); if (!folder) return;
     const root = await fs.realpath(folder.uri.fsPath);
@@ -237,10 +259,10 @@ function createExtension(vscode, context) {
   }
   viewer.onControl = controlInteractive;
   async function controlFromCommand(uri, action) { const folder = await selectFolder(uri); if (folder) await controlInteractive(await fs.realpath(folder.uri.fsPath), action); }
-  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
+  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.runAll', runAll), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
   context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.startInteractive', startInteractive));
   for (const [command, action] of Object.entries({ stepInteractive: 'step', continueInteractive: 'continue', pauseInteractive: 'pause', forceSignal: 'force', releaseSignal: 'release', examineSignal: 'inspect', stopInteractive: 'stop' })) context.subscriptions.push(vscode.commands.registerCommand(`nvcRunner.${command}`, uri => controlFromCommand(uri, action)));
-  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, configure, cancel, generate, startInteractive, controlInteractive };
+  return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, runAll, configure, cancel, generate, startInteractive, controlInteractive };
 }
 function activate(context) { activeInstance = createExtension(require('vscode'), context); context.subscriptions.push(activeInstance); }
 function deactivate() { activeInstance?.dispose(); activeInstance = undefined; }

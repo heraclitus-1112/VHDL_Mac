@@ -11,3 +11,20 @@ test('dirty editor and externally changed config cannot be overwritten',async t=
 test('interface generation reads unsaved editor text without modifying source',async t=>{const root=await fixture(t);const uri={fsPath:path.join(root,'design.vhd'),scheme:'file'};const v=fake(root,['Fixed value'],['100ns','1','tb_changed']);v.workspace.openTextDocument=async documentUri=>({uri:documentUri,getText:()=> 'entity changed is port(b: in std_logic); end;'});const result=await g.generateWizard(v,root,uri);assert.match(await fs.readFile(result.filename,'utf8'),/entity work.changed/);assert.match(await fs.readFile(result.filename,'utf8'),/b => tb_b/);assert.match(await fs.readFile(uri.fsPath,'utf8'),/entity e is/);});
 test('replacing a deleted testbench removes stale entries after explicit confirmation',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'tb_e.vhd'),'');await fs.mkdir(path.join(root,'lib'));const filename=path.join(root,'vhdl.sim.json');await fs.writeFile(filename,JSON.stringify({sources:['design.vhd','tb_deleted.vhd'],top:'tb_deleted',standard:'2008',stopTime:'20ns',libraryPaths:['lib']}));let confirmation;const v=fake(root,[],[]);v.window.showInformationMessage=async message=>{confirmation=message;return 'Apply';};await g.setSimulationTarget(v,root,{name:'tb_e',filename:path.join(root,'tb_e.vhd'),source:path.join(root,'design.vhd'),duration:'2us'});const config=JSON.parse(await fs.readFile(filename,'utf8'));assert.deepEqual(config.sources,['design.vhd','tb_e.vhd']);assert.deepEqual(config.libraryPaths,['lib']);assert.equal(config.top,'tb_e');assert.equal(config.stopTime,'2us');assert.match(confirmation,/Deleted source files/);assert.match(confirmation,/tb_deleted\.vhd/);});
 test('cancelling stale source cleanup leaves original configuration untouched',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'tb_e.vhd'),'');const filename=path.join(root,'vhdl.sim.json');const original=JSON.stringify({sources:['missing_package.vhd','design.vhd'],top:'e',standard:'2008',stopTime:'1us',libraryPaths:[]});await fs.writeFile(filename,original);const v=fake(root,[],[]);v.window.showInformationMessage=async()=>undefined;assert.equal(await g.setSimulationTarget(v,root,{name:'tb_e',filename:path.join(root,'tb_e.vhd'),source:path.join(root,'design.vhd'),duration:'100ns'}),undefined);assert.equal(await fs.readFile(filename,'utf8'),original);});
+
+
+test('new generated target defaults to all independently of stimulus duration',async t=>{
+ const root=await fixture(t);await fs.writeFile(path.join(root,'tb_e.vhd'),'');
+ const v=fake(root,[[{label:'design.vhd'}],'design.vhd'],[]);v.window.showInformationMessage=async()=> 'Apply';
+ const config=await g.setSimulationTarget(v,root,{name:'tb_e',filename:path.join(root,'tb_e.vhd'),source:path.join(root,'design.vhd'),duration:'100ns'});
+ assert.equal(config.stopTime,'all');
+});
+test('updating generated target preserves existing all and longer numeric limit',async t=>{
+ for(const stopTime of ['all','2us']) {
+  const root=await fixture(t);await fs.writeFile(path.join(root,'tb_e.vhd'),'');
+  await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['design.vhd'],top:'e',stopTime,libraryPaths:[]}));
+  let confirmation;const v=fake(root,[],[]);v.window.showInformationMessage=async message=>{confirmation=message;return 'Apply';};
+  const config=await g.setSimulationTarget(v,root,{name:'tb_e',filename:path.join(root,'tb_e.vhd'),source:path.join(root,'design.vhd'),duration:'100ns'});
+  assert.equal(config.stopTime,stopTime);if(stopTime==='all')assert.match(confirmation,/Run All/);
+ }
+});
