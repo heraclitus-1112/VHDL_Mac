@@ -166,3 +166,33 @@ test('result handoff rollback is called if cancellation occurs before the commit
  }}),error=>error.name==='AbortError');
  assert.equal(restored,true);assert.ok((await fs.stat(prior.wavePath)).size>0);
 });
+
+test('postcommit old-wave cleanup failure warns while returning the accepted result',async t=>{
+ const root=await fixture(t),options=await simulator(root),prior=await core.runSimulation(options),output=[];
+ const unlink=fs.unlink;t.after(()=>{fs.unlink=unlink;});
+ fs.unlink=async filename=>{if(filename===prior.wavePath)throw Object.assign(new Error('old wave cleanup refused'),{code:'EACCES'});return unlink(filename);};
+ const result=await core.runSimulation({...options,onOutput:text=>output.push(text)});
+ assert.notEqual(result.wavePath,prior.wavePath);assert.ok((await fs.stat(result.wavePath)).size>0);assert.ok((await fs.stat(prior.wavePath)).size>0);
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
+ assert.match(output.join(''),/警告.*old wave cleanup refused/);assert.match(result.output,/警告.*old wave cleanup refused/);
+});
+test('postcommit temporary cleanup failure cannot reject the accepted result',async t=>{
+ const root=await fixture(t),options=await simulator(root),output=[],rm=fs.rm;t.after(()=>{fs.rm=rm;});
+ fs.rm=async(filename,...args)=>{if(path.basename(filename).startsWith('.result-'))throw new Error('temporary cleanup refused');return rm(filename,...args);};
+ const result=await core.runSimulation({...options,onOutput:text=>output.push(text)});
+ assert.ok((await fs.stat(result.wavePath)).size>0);
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
+ assert.match(output.join(''),/警告.*temporary cleanup refused/);
+});
+test('precommit errors and AbortError remain primary when temporary cleanup also fails',async t=>{
+ for(const mode of ['diagnostic','abort']){
+  const root=await fixture(t),options=await simulator(root),controller=new AbortController(),output=[];
+  const rm=fs.rm;t.after(()=>{fs.rm=rm;});
+  fs.rm=async(filename,...args)=>{if(path.dirname(filename)===path.join(root,'.nvc-build')&&path.basename(filename).startsWith('.result-'))throw new Error('secondary cleanup refused');return rm(filename,...args);};
+  const primary=Object.assign(new Error('primary viewer error'),{output:'original diagnostics'});
+  await assert.rejects(core.runSimulation({...options,signal:controller.signal,onOutput:text=>output.push(text),onResult:async()=>{
+   if(mode==='abort')controller.abort();else throw primary;
+  }}),error=>mode==='abort'?error.name==='AbortError':error===primary&&error.output==='original diagnostics');
+  assert.match(output.join(''),/警告.*secondary cleanup refused/);fs.rm=rm;
+ }
+});

@@ -124,19 +124,30 @@ async function runSimulation({ executable, executableArgs = [], projectDir, conf
   if (signal?.aborted) throw abortError();
   const result = { wavePath, output, projectDir: resolved.projectDir };
   const temporary = path.join(resolved.buildDir, `.result-${randomUUID()}.tmp`);
-  let rollback;
+  let rollback, failure, committed = false;
+  const warn = (message, error) => {
+    const text = `警告：${message}：${error.message}\n`;
+    result.output += text; onOutput?.(text);
+  };
   try {
     await fs.writeFile(temporary, JSON.stringify({ wave: path.basename(wavePath) }), { flag: 'wx' });
     if (signal?.aborted) throw abortError();
     rollback = await onResult?.(result);
     if (signal?.aborted) throw abortError();
     // Atomic publication is the commit point. Later cancellation does not undo acceptance.
-    await fs.rename(temporary, marker);
+    await fs.rename(temporary, marker); committed = true;
   } catch (error) {
-    if (typeof rollback === 'function') await rollback();
+    failure = error;
+    if (typeof rollback === 'function') try { await rollback(); } catch (restoreError) { warn('恢复上次波形失败', restoreError); }
     throw error;
-  } finally { await fs.rm(temporary, { force: true }); }
-  if (previousWave) await fs.unlink(previousWave).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  } finally {
+    try { await fs.rm(temporary, { force: true }); }
+    catch (error) {
+      if (committed || failure) warn(`清理临时结果记录失败（${temporary}）`, error);
+      else throw error;
+    }
+  }
+  if (previousWave) await fs.unlink(previousWave).catch(error => { if (error.code !== 'ENOENT') warn(`清理上次波形失败，保留文件 ${previousWave}`, error); });
   return result;
 }
 function parseDiagnostics(output, projectDir) {

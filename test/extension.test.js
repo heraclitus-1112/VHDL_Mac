@@ -221,3 +221,20 @@ test('failed core commit rolls back the viewer handoff and keeps the old success
  assert.ok((await fs.stat(prior.wavePath)).size>0);assert.equal(await fs.readFile(marker,'utf8'),snapshot);
  assert.equal(await fs.readFile(viewerMarker,'utf8'),viewerSnapshot);
 });
+
+test('Run All accepted viewer and markers stay successful when old FST cleanup is denied', {timeout:15000}, async t=>{
+ const executable=process.env.NVC_BATCH_TEST||'/opt/homebrew/bin/nvc';
+ try{await fs.access(executable);}catch{t.skip('No batch NVC installed.');return;}
+ const root=await fixture(t),s=fake(root);
+ await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture sim of tb is begin process begin wait for 12 ns; wait; end process; end;');
+ await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',stopTime:'5ns'}));
+ s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?executable:key==='waveformWindow'?'beside':fallback});
+ const instance=init(s);t.after(()=>instance.dispose());const prior=await s.commands.get('nvcRunner.run')();assert.ok(prior,s.errors.join(' '));
+ const unlink=fs.unlink;t.after(()=>{fs.unlink=unlink;});
+ fs.unlink=async filename=>{if(filename===prior.wavePath)throw Object.assign(new Error('EACCES old FST retained'),{code:'EACCES'});return unlink(filename);};
+ const result=await s.commands.get('nvcRunner.runAll')();assert.ok(result,s.errors.join(' '));assert.deepEqual(s.errors,[]);
+ assert.ok((await fs.stat(prior.wavePath)).size>0);assert.ok((await fs.stat(result.wavePath)).size>0);
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
+ assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','waveform.nvcwave'),'utf8')).wave,path.basename(result.wavePath));
+ assert.ok(s.calls.some(([kind,text])=>kind==='output'&&/警告.*EACCES old FST retained/.test(text)));
+});
