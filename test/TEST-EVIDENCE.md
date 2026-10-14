@@ -91,3 +91,11 @@
 - snapshot(old) 返回后立即复制原布局字段，修改旧 wave 前保存不可变快照；回滚恢复该工作区快照，并向 load 显式传入原 state，独立于正常 preserve/reset 选项。未改变 entry 时不重新加载原窗口；正常成功的 reset 行为仍由原回归验证。
 - viewer 临时记录清理失败只输出明确警告，不覆盖成功回滚函数或原始失败。
 - 最终完整 `node --test test/*.test.js`：96/96通过、0失败、0跳过；`node --check src/viewer.js` 与 `git diff --check` 通过。
+
+### Run All package and desktop acceptance (2026-10-14)
+
+Chinese 0.4.0: 96/96 tests; English 0.4.1: 97/97; no skips. Both VSIX archives passed integrity and source-content checks. Chinese 0.4.0 remains installed locally.
+
+Real VS Code acceptance used isolated fixtures. The copied Exo4 retained a 5us config; its editor Run All menu omitted --stop-time, printed End of test at 5120ns and opened a fresh FST. Config bytes and user Exo4 source/config hashes stayed unchanged. The new configuration wizard selected all by default; normal Run displayed clk/count/en/rst and finished the asserting counter at 280ns. Default detached window loading and beside rendering were observed. An endless clock was cancelled through the native progress button, then the same project produced a fresh waveform using a 50ns limit. No test NVC process remained.
+
+The English package passed language, semantic comparison and real NVC command-adapter tests. This acceptance run did not separately install the new English GUI; these checks are not presented as independent English GUI proof.
