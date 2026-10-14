@@ -1,5 +1,7 @@
 # VHDL Mac · NVC Runner
 
+> Looking for the English version? Visit the [English edition](https://github.com/heraclitus-1112/VHDL_Mac/tree/english) for English documentation and the English VS Code extension.
+
 在 VS Code 中点击播放按钮，按配置顺序执行 NVC 分析、展开、仿真，成功后默认在独立窗口打开官方 Surfer 波形查看器。
 
 ## 在 Mac 上安装
