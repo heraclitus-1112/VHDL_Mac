@@ -81,3 +81,13 @@
 - 先加4项失败回归，`node --test test/core.test.js test/extension.test.js` 为48项中44通过、4失败（`/tmp/nvc-run-all-housekeeping-red.log`）：旧波形清理失败、提交后临时记录清理失败、提交前主错误/AbortError 被清理错误覆盖，以及真实 NVC 注册命令的提交后 EACCES。
 - 按提交状态区分主流程与清理：提交后清理失败写入明确警告（输出通道及返回 result.output），保留已接受的新结果；旧文件可能留在构建目录。提交前失败仍保留原错误对象、诊断输出或 AbortError，不因临时文件清理失败改变错误类型；回滚失败另记警告。
 - 完整 `node --test test/*.test.js`：93/93通过、0失败、0跳过；`node --check src/core.js` 与 `git diff --check` 通过。真实命令回归确认两个记录都指向新有效 FST，没有运行错误通知，旧 FST 仍存在且清理警告可见。
+
+
+### 0.4.0 viewer 布局快照与临时记录清理
+
+质量审查复现两类问题：关闭常规布局保留后回滚会清空旧选择，新 renderer state 也可能覆盖用于回滚的工作区状态；viewer 临时记录清理 EACCES 会覆盖成功交接返回的回滚函数。
+
+- 先加3项回归，`node --test test/viewer.test.js` 为10项中7通过、3失败（`/tmp/nvc-run-all-viewer-quality-red.log`）：preserve=false 的旧布局恢复、新状态覆盖工作区缓存后的旧布局恢复、临时清理失败保持成功回滚函数及原始发送错误。
+- snapshot(old) 返回后立即复制原布局字段，修改旧 wave 前保存不可变快照；回滚恢复该工作区快照，并向 load 显式传入原 state，独立于正常 preserve/reset 选项。未改变 entry 时不重新加载原窗口；正常成功的 reset 行为仍由原回归验证。
+- viewer 临时记录清理失败只输出明确警告，不覆盖成功回滚函数或原始失败。
+- 最终完整 `node --test test/*.test.js`：96/96通过、0失败、0跳过；`node --check src/viewer.js` 与 `git diff --check` 通过。

@@ -34,3 +34,42 @@ test('cancellation during existing viewer load restores prior marker and sends o
  assert.match(f.messages.filter(message=>message.command==='load').at(-1).url,/a\.fst$/);
  assert.equal(f.messages.filter(message=>message.command==='load').at(-1).restore,'saved-layout');
 });
+
+test('rollback restores the captured layout even when normal layout preservation is disabled',async t=>{
+ const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{});t.after(()=>viewer.dispose());
+ const first=path.join(root,'.nvc-build/a.fst'),second=path.join(root,'.nvc-build/b.fst'),marker=path.join(root,'.nvc-build/waveform.nvcwave');
+ await fs.writeFile(second,'new-wave');await viewer.show({projectDir:root,wavePath:first},'beside',false);
+ await f.panel.receive({command:'ready'});await f.panel.receive({command:'loaded'});
+ const snapshot=await fs.readFile(marker,'utf8'),postMessage=f.panel.webview.postMessage;
+ f.panel.webview.postMessage=async message=>{if(message.command==='load'&&message.url.endsWith('b.fst'))throw new Error('handoff refused');return postMessage(message);};
+ await assert.rejects(viewer.show({projectDir:root,wavePath:second},'beside',false),/handoff refused/);
+ const restored=f.messages.filter(message=>message.command==='load').at(-1);
+ assert.equal(restored.restore,'saved-layout');assert.equal(await fs.readFile(marker,'utf8'),snapshot);assert.equal(viewer.entries.get(marker).preserve,false);
+});
+test('rollback uses the captured old layout even if new renderer state overwrites workspace storage',async t=>{
+ const root=await project(t),f=fixture(root),viewer=new SurferViewer(f.vscode,f.context,()=>{});t.after(()=>viewer.dispose());
+ const first=path.join(root,'.nvc-build/a.fst'),second=path.join(root,'.nvc-build/b.fst');
+ await fs.writeFile(second,'new-wave');await viewer.show({projectDir:root,wavePath:first},'beside');
+ await f.panel.receive({command:'ready'});await f.panel.receive({command:'loaded'});
+ const postMessage=f.panel.webview.postMessage;
+ f.panel.webview.postMessage=async message=>{
+  if(message.command==='load'&&message.url.endsWith('b.fst')){await f.panel.receive({command:'state',state:'new-layout'});throw new Error('late renderer failure');}
+  return postMessage(message);
+ };
+ await assert.rejects(viewer.show({projectDir:root,wavePath:second},'beside'),/late renderer failure/);
+ assert.equal(f.messages.filter(message=>message.command==='load').at(-1).restore,'saved-layout');
+});
+test('viewer temporary cleanup failure preserves accepted rollback receipt and primary errors',async t=>{
+ const root=await project(t),f=fixture(root),warnings=[],viewer=new SurferViewer(f.vscode,f.context,message=>warnings.push(message));t.after(()=>viewer.dispose());
+ const first=path.join(root,'.nvc-build/a.fst'),second=path.join(root,'.nvc-build/b.fst'),marker=path.join(root,'.nvc-build/waveform.nvcwave');
+ await fs.writeFile(second,'new-wave');
+ const rm=fs.rm;t.after(()=>{fs.rm=rm;});
+ fs.rm=async(filename,...args)=>{if(path.dirname(filename)===path.join(root,'.nvc-build')&&path.basename(filename).startsWith('.viewer-'))throw Object.assign(new Error('EACCES viewer temporary cleanup'),{code:'EACCES'});return rm(filename,...args);};
+ const rollback=await viewer.show({projectDir:root,wavePath:first},'beside');assert.equal(typeof rollback,'function');
+ assert.equal(JSON.parse(await fs.readFile(marker,'utf8')).wave,'a.fst');assert.ok(warnings.some(message=>/清理.*EACCES viewer temporary cleanup/.test(message)));
+ await f.panel.receive({command:'ready'});await f.panel.receive({command:'loaded'});const snapshot=await fs.readFile(marker,'utf8');
+ const primary=new Error('primary delivery failure'),postMessage=f.panel.webview.postMessage;
+ f.panel.webview.postMessage=async message=>{if(message.command==='load'&&message.url.endsWith('b.fst'))throw primary;return postMessage(message);};
+ await assert.rejects(viewer.show({projectDir:root,wavePath:second},'beside'),error=>error===primary);
+ assert.equal(await fs.readFile(marker,'utf8'),snapshot);assert.equal(viewer.entries.get(marker).wave,first);
+});

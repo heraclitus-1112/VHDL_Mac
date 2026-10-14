@@ -28,7 +28,7 @@ class SurferViewer {
     const old = this.entries.get(marker);
     const previousEntry = old && { wave: old.wave, preserve: old.preserve, loaded: old.loaded, loadId: old.loadId };
     const temporary = path.join(build, `.viewer-${randomUUID()}.tmp`);
-    let published = false;
+    let published = false, updated = false, previousLayout;
     const rollback = async () => {
       if (!published) return;
       // Restore the stable record and prior entry if delivery or the caller's commit fails.
@@ -38,7 +38,11 @@ class SurferViewer {
       const current = this.entries.get(marker);
       if (old && current === old) {
         Object.assign(old, previousEntry);
-        if (old.ready) try { old.loaded = false; await this.load(old); } catch (restoreError) { this.warning(`恢复上次波形失败：${restoreError.message}`); }
+        if (updated && old.ready) try {
+          if (previousLayout) await this.context.workspaceState?.update(this.stateKey(root), previousLayout);
+          old.loaded = false;
+          await this.load(old, { state: previousLayout?.version === old.version ? previousLayout.state : undefined });
+        } catch (restoreError) { this.warning(`恢复上次波形失败：${restoreError.message}`); }
       } else if (current) { this.entries.delete(marker); current.panel.dispose?.(); }
     };
     try {
@@ -49,7 +53,10 @@ class SurferViewer {
       checkCancellation();
       if (old) {
         if (old.loaded) await this.snapshot(old);
+        const storedLayout = this.context.workspaceState?.get(this.stateKey(root));
+        previousLayout = storedLayout && { version: storedLayout.version, state: storedLayout.state };
         checkCancellation();
+        updated = true;
         old.wave = wave; old.preserve = preserve; old.panel.reveal(undefined, false);
         if (old.ready) await this.load(old);
         checkCancellation();
@@ -67,7 +74,10 @@ class SurferViewer {
     } catch (error) {
       await rollback();
       throw error;
-    } finally { await fs.rm(temporary, { force: true }); }
+    } finally {
+      try { await fs.rm(temporary, { force: true }); }
+      catch (error) { this.warning(`清理波形窗口临时记录失败：${error.message}`); }
+    }
   }
   async resolveCustomEditor(document, panel) {
     const marker = document.uri.fsPath, root = path.dirname(path.dirname(marker));
@@ -112,9 +122,9 @@ class SurferViewer {
     // Assets stay owned by the official extension. No network scripts or redistribution.
     panel.webview.html = await this.html(uri('surfer.js'), uri('surfer_bg.wasm'));
   }
-  async load(entry) {
+  async load(entry, restoreOverride) {
     const stored = this.context.workspaceState?.get(this.stateKey(entry.root));
-    const restore = !entry.loaded && entry.preserve && stored?.version === entry.version ? stored.state : undefined;
+    const restore = restoreOverride ? restoreOverride.state : !entry.loaded && entry.preserve && stored?.version === entry.version ? stored.state : undefined;
     if (!entry.loaded && stored && stored.version !== entry.version) this.warning('Surfer 版本已变化，本次重新建立波形布局。');
     const keep = entry.loaded && entry.preserve;
     entry.loaded = false;
