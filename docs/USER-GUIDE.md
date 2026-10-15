@@ -43,3 +43,18 @@ After editing code, click **End session** before starting a new interactive sess
 Batch and interactive simulations share the project's waveform window. Rerunning preserves signal selection and layout; closing and reopening restores them too. Disable `nvcRunner.preserveWaveformLayout` if you want to select the signals again.
 
 Before using interactive mode on a new Mac, follow the README and run `bash tools/build-nvc-interactive.sh --install-deps`. Ordinary Homebrew NVC does not include this experimental snapshot patch. The current interactive controls support learning and basic functional simulation. They do not provide ModelSim's source-code breakpoints, single stepping, or vendor-library integration.
+
+## Select a testbench architecture (0.5.1)
+
+A testbench entity can have multiple architectures. Open a VHDL file and use **NVC: Select Testbench Architecture** in the editor overflow menu or Command Palette. The saved choice applies to normal Run, Run All, and interactive simulation. Each run uses one architecture; it does not run every architecture in sequence. The configuration wizard also offers this selection; a single discovered architecture is selected automatically.
+
+The entity and architecture are stored separately:
+
+```json
+"top": "tb_mux",
+"architecture": "test1"
+```
+
+Existing configurations without `architecture` retain NVC's default selection. Choose **NVC default selection** to remove a pinned choice. Candidates come from declarations in the configured source files; manual entry of a basic identifier is also available. Cancellation leaves configuration unchanged. A deleted or invalid selected architecture fails explicitly and preserves the previous successful waveform rather than falling back. Output shows the actual target, such as `tb_mux(test1)`. End an active interactive session before switching. Setting a newly generated testbench as top replaces any old architecture choice with its generated `sim` architecture.
+
+This selects only the top-level testbench architecture. DUT architectures inside it still follow VHDL instantiation or configuration binding. Discovery supports basic identifiers and ignores line comments, block comments, and strings. It is limited to 4 MiB per file and 16 MiB total.

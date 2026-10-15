@@ -69,3 +69,12 @@ Chinese 0.4.0: 96/96 tests; English 0.4.1: 97/97; no skips. Both VSIX archives p
 Real VS Code acceptance used isolated fixtures. The copied Exo4 retained a 5us config; its editor Run All menu omitted --stop-time, printed End of test at 5120ns and opened a fresh FST. Config bytes and user Exo4 source/config hashes stayed unchanged. The new configuration wizard selected all by default; normal Run displayed clk/count/en/rst and finished the asserting counter at 280ns. Default detached window loading and beside rendering were observed. An endless clock was cancelled through the native progress button, then the same project produced a fresh waveform using a 50ns limit. No test NVC process remained.
 
 The English package passed language, semantic comparison and real NVC command-adapter tests. This acceptance run did not separately install the new English GUI; these checks are not presented as independent English GUI proof.
+
+## Architecture selection acceptance (2026-10-15)
+
+- Chinese 0.5.0: 109 tests passed, zero skipped. English 0.5.1: 110 tests passed, zero skipped, including the English language scan.
+- Real NVC selected the first and second architectures in timed and Run All modes, switched back, rejected a nonexistent architecture without replacing the previous successful result, and loaded the selected architecture in the patched Tcl/live-wave runtime.
+- Regression coverage includes comments/strings, bounded declaration reading, manual fallback, selector cancellation, unsaved source declarations, dirty or externally changed configuration, symlink/trust protection, generated sim targets, and notification lock release.
+- Desktop acceptance used an owned two-architecture fixture. The editor menu and picker exposed first/second/default/manual choices. Selecting first persisted the field and normal Play printed 20ns ARCH_FIRST. Selecting second then Play printed 40ns ARCH_SECOND and loaded a new FST in the same Surfer editor.
+- Both VSIX archives passed integrity and runtime/schema content checks. Chinese 0.5.0 was installed and the user's original Exo2 window was reloaded; the new menu entry was observed. Original course source hashes remained unchanged and no simulation configuration was created in the user's project.
+- English package received the same feature and automated tests; this round did not independently install or exercise the English native UI.

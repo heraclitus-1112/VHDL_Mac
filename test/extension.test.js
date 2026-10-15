@@ -16,8 +16,8 @@ test('testbench generation command checks workspace trust before opening UI',asy
 test('untrusted run stops before saving dirty documents',async t=>{const root=await fixture(t);const s=fake(root);s.vscode.workspace.isTrusted=false;let saved=false;s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'},save:async()=>{saved=true;return true;}}];init(s);await s.commands.get('nvcRunner.run')();assert.equal(saved,false);assert.match(s.errors[0],/Trust/);});
 test('run lock is acquired before saving and only saves selected project files',async t=>{const root=await fixture(t);const s=fake(root);let release;let saved=0,outsideSaved=false;const wait=new Promise(resolve=>release=resolve);s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd'),scheme:'file'},save:async()=>{saved++;await wait;return false;}},{isDirty:true,uri:{fsPath:'/outside/other.vhd',scheme:'file'},save:async()=>{outsideSaved=true;return true;}}];init(s);const first=s.commands.get('nvcRunner.run')();while(saved===0)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();release();await first;assert.equal(saved,1);assert.equal(outsideSaved,false);assert.ok(s.errors.some(message=>/already running/.test(message)));assert.ok(s.errors.some(message=>/Cannot save/.test(message)));});
 test('configuration wizard cancellation leaves project unchanged',async t=>{const root=await fixture(t);const s=fake(root);init(s);await s.commands.get('nvcRunner.configure')();await assert.rejects(fs.stat(path.join(root,'vhdl.sim.json')));assert.deepEqual(await fs.readdir(root),['tb.vhd']);});
-test('configuration wizard records explicit order and confirmed fields',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'logic.vhdl'),'');const s=fake(root);const picks=[['logic.vhdl','tb.vhd'],'logic.vhdl','tb.vhd','2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();init(s);await s.commands.get('nvcRunner.configure')();const config=JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8'));assert.deepEqual(config,{sources:['logic.vhdl','tb.vhd'],top:'tb',standard:'2008',stopTime:'1us',libraryPaths:[]});});
-test('saved configuration releases project lock while success notification remains open',async t=>{const root=await fixture(t);const s=fake(root);const picks=[['tb.vhd'],'tb.vhd','2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();let releaseMessage,notificationShown=false;const pendingMessage=new Promise(resolve=>releaseMessage=resolve);s.vscode.window.showInformationMessage=async message=>{if(message.includes('configuration saved')){notificationShown=true;await pendingMessage;}};init(s);const configuring=s.commands.get('nvcRunner.configure')();try{while(!notificationShown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.equal(s.errors.some(message=>/already running or being configured/.test(message)),false,'saved configuration must not block a new run');assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('Project: ')),'run should reach the NVC stage');}finally{releaseMessage();await configuring;}});
+test('configuration wizard records explicit order and confirmed fields',async t=>{const root=await fixture(t);await fs.writeFile(path.join(root,'logic.vhdl'),'');const s=fake(root);const picks=[['logic.vhdl','tb.vhd'],'logic.vhdl','tb.vhd',{id:'default'},'2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();init(s);await s.commands.get('nvcRunner.configure')();const config=JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8'));assert.deepEqual(config,{sources:['logic.vhdl','tb.vhd'],top:'tb',standard:'2008',stopTime:'1us',libraryPaths:[]});});
+test('saved configuration releases project lock while success notification remains open',async t=>{const root=await fixture(t);const s=fake(root);const picks=[['tb.vhd'],'tb.vhd',{id:'default'},'2008',{id:'time'}];const inputs=['tb','1us'];s.vscode.window.showQuickPick=async()=>picks.shift();s.vscode.window.showInputBox=async()=>inputs.shift();let releaseMessage,notificationShown=false;const pendingMessage=new Promise(resolve=>releaseMessage=resolve);s.vscode.window.showInformationMessage=async message=>{if(message.includes('configuration saved')){notificationShown=true;await pendingMessage;}};init(s);const configuring=s.commands.get('nvcRunner.configure')();try{while(!notificationShown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.equal(s.errors.some(message=>/already running or being configured/.test(message)),false,'saved configuration must not block a new run');assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('Project: ')),'run should reach the NVC stage');}finally{releaseMessage();await configuring;}});
 test('config symlink cannot overwrite VHDL source',async t=>{const root=await fixture(t);await fs.symlink(path.join(root,'tb.vhd'),path.join(root,'vhdl.sim.json'));const s=fake(root);init(s);await s.commands.get('nvcRunner.run')();assert.match(s.errors[0],/symbolic link/);assert.equal(await fs.readFile(path.join(root,'tb.vhd'),'utf8'),'entity tb is end;');});
 test('dirty file symlink outside workspace is never saved',async t=>{const root=await fixture(t);const outside=await fs.mkdtemp(path.join(os.tmpdir(),'outside save '));t.after(()=>fs.rm(outside,{recursive:true,force:true}));const target=path.join(outside,'external.vhd');await fs.writeFile(target,'unchanged');await fs.symlink(target,path.join(root,'linked.vhd'));const s=fake(root);let saved=false;s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'linked.vhd'),scheme:'file'},save:async()=>{saved=true;return true;}}];init(s);await s.commands.get('nvcRunner.run')();assert.equal(saved,false);assert.match(s.errors[0],/workspace/);});
 
@@ -25,6 +25,7 @@ test('dirty file symlink outside workspace is never saved',async t=>{const root=
 function wizard(state, mode, inputs = ['tb']) {
   const picks = [['tb.vhd'], 'tb.vhd', '2008'];
   state.vscode.window.showQuickPick = async (items, options) => {
+    if (options.title.includes('Testbench architecture')) return items.find(item=>item.id==='default');
     if (picks.length) return picks.shift();
     assert.equal(options.title, 'Select simulation run mode');
     assert.ok(items.some(item => item.id === 'all'));
@@ -237,4 +238,56 @@ test('Run All accepted viewer and markers stay successful when old FST cleanup i
  assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','.nvc-runner.json'),'utf8')).wave,path.basename(result.wavePath));
  assert.equal(JSON.parse(await fs.readFile(path.join(root,'.nvc-build','waveform.nvcwave'),'utf8')).wave,path.basename(result.wavePath));
  assert.ok(s.calls.some(([kind,text])=>kind==='output'&&/Warning.*EACCES old FST retained/.test(text)));
+});
+
+test('architecture selection command persists a named choice then restores NVC default',async t=>{
+ const root=await fixture(t),s=fake(root),filename=path.join(root,'vhdl.sim.json');
+ await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture FIRST of tb is begin end; architecture second of tb is begin end;');
+ const original={sources:['tb.vhd'],top:'tb',stopTime:'all',libraryPaths:[],dumpArrays:8};await fs.writeFile(filename,JSON.stringify(original));
+ s.vscode.window.showQuickPick=async items=>({...items.find(item=>item.architecture==='FIRST'),label:'translated label'});
+ init(s);assert.equal(typeof s.commands.get('nvcRunner.selectArchitecture'),'function');
+ await s.commands.get('nvcRunner.selectArchitecture')();assert.deepEqual(JSON.parse(await fs.readFile(filename,'utf8')),{...coreConfig(original),architecture:'FIRST'});
+ s.vscode.window.showQuickPick=async items=>items.find(item=>item.id==='default');await s.commands.get('nvcRunner.selectArchitecture')();
+ assert.deepEqual(JSON.parse(await fs.readFile(filename,'utf8')),coreConfig(original));assert.deepEqual(s.errors,[]);
+});
+function coreConfig(value){return require('../src/core').validateConfig(value);}
+test('architecture selection cancellation, dirty config and external edits never overwrite config',async t=>{
+ for(const action of ['cancel','dirty','changed','symlink','trust']) {
+  const root=await fixture(t),s=fake(root),filename=path.join(root,'vhdl.sim.json');
+  const original=JSON.stringify({sources:['tb.vhd'],top:'tb',architecture:'sim'});await fs.writeFile(filename,original);
+  s.vscode.window.showQuickPick=async items=>{
+   if(action==='cancel')return;
+   if(action==='dirty')s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:filename}}];
+   if(action==='changed')await fs.writeFile(filename,original+'\n');
+   if(action==='symlink'){await fs.unlink(filename);await fs.symlink(path.join(root,'tb.vhd'),filename);}
+   if(action==='trust')s.vscode.workspace.isTrusted=false;
+   return items.find(item=>item.id==='default');
+  };
+  init(s);assert.equal(typeof s.commands.get('nvcRunner.selectArchitecture'),'function');await s.commands.get('nvcRunner.selectArchitecture')();
+  if(action==='symlink'){assert.equal((await fs.lstat(filename)).isSymbolicLink(),true);assert.equal(await fs.readFile(path.join(root,'tb.vhd'),'utf8'),'entity tb is end;');}
+  else assert.equal(await fs.readFile(filename,'utf8'),original+(action==='changed'?'\n':''));
+  assert.equal(s.errors.length,action==='cancel'?0:1);
+ }
+});
+test('configuration wizard selects an architecture of the confirmed top',async t=>{
+ const root=await fixture(t),s=fake(root);await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture first of tb is begin end; architecture second of tb is begin end;');
+ wizard(s,'all');const pick=s.vscode.window.showQuickPick;
+ s.vscode.window.showQuickPick=async(items,options)=> options.title.includes('Testbench architecture')?items.find(item=>item.architecture==='first'):pick(items,options);
+ init(s);await s.commands.get('nvcRunner.configure')();assert.deepEqual(s.errors,[]);assert.equal(JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8')).architecture,'first');
+});
+test('architecture selection uses unsaved source declarations and rejects untrusted projects',async t=>{
+ const root=await fixture(t),s=fake(root);await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb'}));
+ s.vscode.workspace.textDocuments=[{isDirty:true,uri:{fsPath:path.join(root,'tb.vhd')},getText:()=> 'architecture unsaved of tb is begin end;'}];
+ let asked=false;s.vscode.window.showQuickPick=async items=>{asked=true;return items.find(item=>item.architecture==='unsaved');};
+ init(s);await s.commands.get('nvcRunner.selectArchitecture')();assert.equal(JSON.parse(await fs.readFile(path.join(root,'vhdl.sim.json'),'utf8')).architecture,'unsaved');
+ asked=false;s.vscode.workspace.isTrusted=false;await s.commands.get('nvcRunner.selectArchitecture')();assert.equal(asked,false);assert.equal(s.errors.length,1);
+});
+
+test('architecture selection releases project lock before its success notification closes',async t=>{
+ const root=await fixture(t),s=fake(root);await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb'}));
+ s.vscode.window.showQuickPick=async items=>items.find(item=>item.id==='default');
+ let shown=false,release;const pending=new Promise(resolve=>release=resolve);
+ s.vscode.window.showInformationMessage=async()=>{shown=true;await pending;};init(s);
+ const selection=s.commands.get('nvcRunner.selectArchitecture')();
+ try{while(!shown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.ok(!s.errors.some(message=>/already running or being configured/.test(message)));assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('Project: ')));}finally{release();await selection;}
 });

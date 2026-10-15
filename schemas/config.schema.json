@@ -54,6 +54,11 @@
       "maximum": 1000000,
       "default": 0,
       "description": "Write nested arrays with up to this many elements to the waveform. Set to 0 to disable. Higher values increase memory use and waveform file size."
+    },
+    "architecture": {
+      "description": "Optional top-level testbench architecture; omit to use the NVC default selection.",
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"
     }
   }
 }

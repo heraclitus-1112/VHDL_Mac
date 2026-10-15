@@ -9,7 +9,7 @@ const IGNORED = new Set(['.nvc-build', '.git', 'node_modules', 'build', 'dist', 
 function within(root, target) { const relative = path.relative(root, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); }
 function validateConfig(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('vhdl.sim.json must be a JSON object.');
-  const allowed = new Set(['sources', 'top', 'standard', 'stopTime', 'libraryPaths', 'dumpArrays']);
+  const allowed = new Set(['sources', 'top', 'standard', 'stopTime', 'libraryPaths', 'dumpArrays', 'architecture']);
   for (const key of Object.keys(data)) if (!allowed.has(key)) throw new Error(`Unknown configuration field: ${key}`);
   if (!Array.isArray(data.sources) || !data.sources.length) throw new Error('sources must contain VHDL files in compilation order.');
   for (const source of data.sources) {
@@ -18,6 +18,7 @@ function validateConfig(data) {
   }
   if (new Set(data.sources).size !== data.sources.length) throw new Error('sources must not contain duplicates.');
   if (typeof data.top !== 'string' || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(data.top)) throw new Error('top must be a valid VHDL basic entity name.');
+  if (data.architecture !== undefined && (typeof data.architecture !== 'string' || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(data.architecture))) throw new Error('architecture must be a valid VHDL basic identifier.');
   const standard = data.standard ?? '2008';
   if (!['1993', '2002', '2008'].includes(standard)) throw new Error('standard must be 1993, 2002, or 2008.');
   const stopTime = data.stopTime ?? '1us';
@@ -25,7 +26,7 @@ function validateConfig(data) {
   const libraryPaths = data.libraryPaths ?? [];
   if (!Array.isArray(libraryPaths) || libraryPaths.some(p => typeof p !== 'string' || !p || p.includes('\0'))) throw new Error('libraryPaths must be an array of valid directory paths.');
   if (data.dumpArrays !== undefined && (!Number.isSafeInteger(data.dumpArrays) || data.dumpArrays < 0 || data.dumpArrays > 1000000)) throw new Error('dumpArrays must be an integer from 0 to 1000000; 0 disables array dumping.');
-  return { sources: [...data.sources], top: data.top, standard, stopTime, libraryPaths: [...libraryPaths], ...(data.dumpArrays === undefined ? {} : { dumpArrays: data.dumpArrays }) };
+  return { sources: [...data.sources], top: data.top, ...(data.architecture === undefined ? {} : { architecture: data.architecture }), standard, stopTime, libraryPaths: [...libraryPaths], ...(data.dumpArrays === undefined ? {} : { dumpArrays: data.dumpArrays }) };
 }
 async function safeDirectory(root, directory) {
   try {
@@ -67,12 +68,13 @@ async function discoverSources(projectDir) {
   }
   await visit(root); return found.sort();
 }
+function designTarget(config) { return config.architecture ? `${config.top}(${config.architecture})` : config.top; }
 function buildStageArgs(config, buildDir, wavePath) {
   const common = [`--std=${config.standard}`, `--work=work:${path.join(buildDir, 'work')}`, ...config.libraryPaths.flatMap(p => ['-L', p])];
   return [
     { stage: 'analysis', args: [...common, '-a', ...config.sources] },
-    { stage: 'elaboration', args: [...common, '-e', config.top] },
-    { stage: 'simulation', args: [...common, '-r', config.top, ...(config.stopTime === 'all' ? [] : [`--stop-time=${config.stopTime}`]), `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
+    { stage: 'elaboration', args: [...common, '-e', designTarget(config)] },
+    { stage: 'simulation', args: [...common, '-r', designTarget(config), ...(config.stopTime === 'all' ? [] : [`--stop-time=${config.stopTime}`]), `--wave=${wavePath}`, ...(config.dumpArrays ? [`--dump-arrays=${config.dumpArrays}`] : [])] }
   ];
 }
 function abortError() { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; return error; }
@@ -174,4 +176,4 @@ async function resolveNvc(override, environment = process.env) {
   }
   throw new Error('NVC was not found. Install NVC or set nvcRunner.nvcPath to the full path of its executable.');
 }
-module.exports = { validateConfig, resolveProject, discoverSources, buildStageArgs, runSimulation, parseDiagnostics, resolveNvc, within };
+module.exports = { designTarget, validateConfig, resolveProject, discoverSources, buildStageArgs, runSimulation, parseDiagnostics, resolveNvc, within };

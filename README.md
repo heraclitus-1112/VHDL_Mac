@@ -13,17 +13,17 @@ brew install nvc
 git clone --branch english https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.4.1-en.vsix
+code --install-extension packages/nvc-runner-0.5.1-en.vsix
 code examples/counter
 ```
 
 If `code` is not on your PATH, run **Shell Command: Install 'code' command in PATH** from the VS Code Command Palette, or select **Install from VSIX** in the Extensions view.
 
-The English VSIX uses manifest version `0.4.1` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
+The English VSIX uses manifest version `0.5.1` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
 
 ```sh
 git clone --branch main https://github.com/heraclitus-1112/VHDL_Mac.git VHDL_Mac-Chinese
-code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.4.0.vsix --force
+code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.5.0.vsix --force
 ```
 
 Open `examples/counter/tb_counter.vhd` and click ▶ in the top-right corner to run the configured example. NVC should print `TB_PASS`, and Surfer should open the waveform in a separate window. Select a scope, then click signal names under Variables to add them to the waveform. See the [user guide](docs/USER-GUIDE.md) for detailed instructions.
@@ -140,3 +140,18 @@ There are no third-party runtime dependencies. The extension uses CommonJS and N
 `src/core.js` exports `validateConfig(data)`, `resolveProject(projectDir, data)`, `discoverSources(projectDir)`, `buildStageArgs(resolvedConfig, buildDir, wavePath)`, `runSimulation(options)`, `parseDiagnostics(output, projectDir)`, and `resolveNvc(override)`. `runSimulation` returns `{ wavePath, output, projectDir }` and throws on failure. It supports `AbortSignal`, `onOutput`, `onStage`, and an asynchronous `onResult` handoff. The handoff may return a rollback function to restore the viewer if publication fails before commit.
 
 Separate acceptance tests cover real NVC, the VS Code Extension Host, and the official Surfer viewer. Passing Node unit tests alone does not establish that the waveform UI displays correctly.
+
+## Select a testbench architecture (0.5.1)
+
+A testbench entity can have multiple architectures. Open a VHDL file and use **NVC: Select Testbench Architecture** in the editor overflow menu or Command Palette. The saved choice applies to normal Run, Run All, and interactive simulation. Each run uses one architecture; it does not run every architecture in sequence. The configuration wizard also offers this selection; a single discovered architecture is selected automatically.
+
+The entity and architecture are stored separately:
+
+```json
+"top": "tb_mux",
+"architecture": "test1"
+```
+
+Existing configurations without `architecture` retain NVC's default selection. Choose **NVC default selection** to remove a pinned choice. Candidates come from declarations in the configured source files; manual entry of a basic identifier is also available. Cancellation leaves configuration unchanged. A deleted or invalid selected architecture fails explicitly and preserves the previous successful waveform rather than falling back. Output shows the actual target, such as `tb_mux(test1)`. End an active interactive session before switching. Setting a newly generated testbench as top replaces any old architecture choice with its generated `sim` architecture.
+
+This selects only the top-level testbench architecture. DUT architectures inside it still follow VHDL instantiation or configuration binding. Discovery supports basic identifiers and ignores line comments, block comments, and strings. It is limited to 4 MiB per file and 16 MiB total.

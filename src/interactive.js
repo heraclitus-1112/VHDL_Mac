@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { resolveProject } = require('./core');
+const { resolveProject, designTarget } = require('./core');
 
 function durationParts(duration) {
   const match = typeof duration === 'string' && duration.match(/^([1-9][0-9]*)(fs|ps|ns|us|ms|sec)$/);
@@ -44,9 +44,9 @@ class InteractiveSession {
     const buildDir = await fs.mkdtemp(path.join(resolved.buildDir, 'interactive-'));
     const common = [`--std=${resolved.standard}`, `--work=work:${path.join(buildDir, 'work')}`, ...resolved.libraryPaths.flatMap(p => ['-L', p])];
     await stage(options.executable, [...common, '-a', ...resolved.sources], resolved.projectDir, options.onOutput, options.signal);
-    await stage(options.executable, [...common, '-e', resolved.top], resolved.projectDir, options.onOutput, options.signal);
+    await stage(options.executable, [...common, '-e', designTarget(resolved)], resolved.projectDir, options.onOutput, options.signal);
     const session = new InteractiveSession({ ...options, projectDir: resolved.projectDir, buildDir });
-    session.child = spawn(options.executable, [...common, '--do', resolved.top, path.join(__dirname, '../media/session.tcl')], {
+    session.child = spawn(options.executable, [...common, '--do', designTarget(resolved), path.join(__dirname, '../media/session.tcl')], {
       cwd: resolved.projectDir, shell: false, stdio: ['pipe', 'pipe', 'pipe']
     });
     session.attach();

@@ -106,7 +106,7 @@ async function setSimulationTarget(vscode, root, result) {
   }
   config = { ...config, sources: retained };
   if (!config.sources.includes(source)) config.sources.push(source);
-  config.sources.push(generated); config.top = result.name; config.standard = '2008';
+  config.sources.push(generated); config.top = result.name; config.architecture = 'sim'; config.standard = '2008';
   if (config.stopTime !== 'all' && tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
   core.validateConfig(config); await core.resolveProject(root, config);
   const cleanup = missing.length ? `\nDeleted source files will be removed from the configuration: ${missing.join(', ')}. If these dependencies are still needed, cancel and reconfigure.` : '';
