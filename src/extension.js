@@ -242,7 +242,17 @@ function createExtension(vscode, context) {
       session = await InteractiveSession.start({ executable, projectDir: root, config, signal: controller.signal,
         onOutput: text => { output.append(text); sessionOutput = (sessionOutput + text).slice(-1048576); updateDiagnostics(sessionOutput, root); },
         onTime: () => sessionState(root),
-        onWave: async result => { await viewer.show(result, settings.get('waveformWindow', 'newWindow'), settings.get('preserveWaveformLayout', true)); await viewer.waitLoaded(root); },
+        onWave: async result => {
+          const rollback = await viewer.show(result, settings.get('waveformWindow', 'newWindow'), settings.get('preserveWaveformLayout', true), controller.signal);
+          try {
+            await viewer.waitLoaded(root);
+            if (controller.signal.aborted) { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; throw error; }
+          }
+          catch (error) {
+            try { await rollback?.(); } catch (restoreError) { output.appendLine(`Warning: Failed to restore the previous interactive waveform: ${restoreError.message}`); }
+            throw error;
+          }
+        },
         onExit: () => { if (sessions.get(root) === session) { sessions.delete(root); sessionState(root); } }
       });
       if (!session.waveSupported) { session.close(); throw new Error('This interactive NVC build lacks native waveform snapshot support. Install the interactive build using tools/build-nvc-interactive.sh, or use batch simulation.'); }

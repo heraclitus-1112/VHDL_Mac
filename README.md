@@ -13,17 +13,17 @@ brew install nvc
 git clone --branch english https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.5.1-en.vsix
+code --install-extension packages/nvc-runner-0.6.1-en.vsix
 code examples/counter
 ```
 
 If `code` is not on your PATH, run **Shell Command: Install 'code' command in PATH** from the VS Code Command Palette, or select **Install from VSIX** in the Extensions view.
 
-The English VSIX uses manifest version `0.5.1` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
+The English VSIX uses manifest version `0.6.1` and the same extension ID as the Chinese edition. These are alternative builds: install one language edition at a time. Installing one replaces the other. To return to Chinese, install the VSIX from `main` with `--force`:
 
 ```sh
 git clone --branch main https://github.com/heraclitus-1112/VHDL_Mac.git VHDL_Mac-Chinese
-code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.5.0.vsix --force
+code --install-extension VHDL_Mac-Chinese/packages/nvc-runner-0.6.0.vsix --force
 ```
 
 Open `examples/counter/tb_counter.vhd` and click ▶ in the top-right corner to run the configured example. NVC should print `TB_PASS`, and Surfer should open the waveform in a separate window. Select a scope, then click signal names under Variables to add them to the waveform. See the [user guide](docs/USER-GUIDE.md) for detailed instructions.
@@ -155,3 +155,11 @@ The entity and architecture are stored separately:
 Existing configurations without `architecture` retain NVC's default selection. Choose **NVC default selection** to remove a pinned choice. Candidates come from declarations in the configured source files; manual entry of a basic identifier is also available. Cancellation leaves configuration unchanged. A deleted or invalid selected architecture fails explicitly and preserves the previous successful waveform rather than falling back. Output shows the actual target, such as `tb_mux(test1)`. End an active interactive session before switching. Setting a newly generated testbench as top replaces any old architecture choice with its generated `sim` architecture.
 
 This selects only the top-level testbench architecture. DUT architectures inside it still follow VHDL instantiation or configuration binding. Discovery supports basic identifiers and ignores line comments, block comments, and strings. It is limited to 4 MiB per file and 16 MiB total.
+
+## Compile the selected testbench architecture (0.6.1)
+
+With an explicit testbench architecture selected, normal Run, Run All, and interactive simulation prepare temporary sources in the build directory. They compile the selected TB architecture and its explicit architecture dependencies while retaining the DUT and unrelated design units. Original `.vhd` files stay unchanged. Selecting `TB1` can therefore run while an unselected `TB2` references an unfinished `RTL2`; selecting `TB2` still reports that missing dependency.
+
+Output lists the excluded TB architectures. Compile and runtime source locations map back to the original workspace files and line numbers. Each selected compilation uses an isolated work library to prevent stale architectures from affecting results. Failure or cancellation preserves the last successful waveform. Without a pinned architecture, **NVC default selection** continues to compile all sources.
+
+The filter recognizes design-unit boundaries, context clauses, and nested statements while preserving byte positions and line endings. It stops explicitly if boundaries or dependencies cannot be determined safely and does not hide errors in the selected architecture. Selected compilation currently supports basic identifiers. Extended identifiers, ambiguous same-entity component binding, and unresolved configuration dependencies require splitting files or explicit entity/architecture binding. Sources still need complete, recognizable structure; structural errors such as a missing `end` in an unselected architecture must also be corrected.

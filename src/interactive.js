@@ -4,6 +4,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { resolveProject, designTarget } = require('./core');
+const { prepareCompilation, createLineMapper, cleanCompilation } = require('./compilation');
 
 function durationParts(duration) {
   const match = typeof duration === 'string' && duration.match(/^([1-9][0-9]*)(fs|ps|ns|us|ms|sec)$/);
@@ -15,7 +16,7 @@ function quoteTcl(value) {
   return `[encoding convertfrom utf-8 [binary decode base64 {${Buffer.from(value).toString('base64')}}]]`;
 }
 function aborted() { const error = new Error('Interactive session startup cancelled.'); error.name = 'AbortError'; return error; }
-function stage(executable, args, cwd, onOutput, signal) {
+function stage(executable, args, cwd, onOutput, signal, mapText) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(aborted()); return; }
     const child = spawn(executable, args, { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -24,7 +25,11 @@ function stage(executable, args, cwd, onOutput, signal) {
     signal?.addEventListener('abort', cancel, { once: true });
     const cleanup = () => { signal?.removeEventListener('abort', cancel); clearTimeout(killTimer); };
     let output = '';
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { output += chunk; onOutput?.(chunk.toString()); });
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding('utf8');
+      const mapper = createLineMapper(mapText, text => { output += text; onOutput?.(text); });
+      stream.on('data', text => mapper.write(text)); stream.once('end', () => mapper.end());
+    }
     child.once('error', error => { cleanup(); reject(error); });
     child.once('close', code => {
       cleanup();
@@ -43,13 +48,18 @@ class InteractiveSession {
     await fs.mkdir(resolved.buildDir, { recursive: true });
     const buildDir = await fs.mkdtemp(path.join(resolved.buildDir, 'interactive-'));
     const common = [`--std=${resolved.standard}`, `--work=work:${path.join(buildDir, 'work')}`, ...resolved.libraryPaths.flatMap(p => ['-L', p])];
-    await stage(options.executable, [...common, '-a', ...resolved.sources], resolved.projectDir, options.onOutput, options.signal);
-    await stage(options.executable, [...common, '-e', designTarget(resolved)], resolved.projectDir, options.onOutput, options.signal);
-    const session = new InteractiveSession({ ...options, projectDir: resolved.projectDir, buildDir });
+    let compiled;
+    try {
+      compiled = await prepareCompilation(resolved, buildDir, options.signal, options.onOutput);
+      await stage(options.executable, [...common, '-a', ...compiled.sources], resolved.projectDir, options.onOutput, options.signal, compiled.mapText);
+      await stage(options.executable, [...common, '-e', designTarget(resolved)], resolved.projectDir, options.onOutput, options.signal, compiled.mapText);
+    } catch (error) { await cleanCompilation(buildDir, options.onOutput, true); throw error; }
+    const session = new InteractiveSession({ ...options, projectDir: resolved.projectDir, buildDir, mapText: compiled.mapText });
     session.child = spawn(options.executable, [...common, '--do', designTarget(resolved), path.join(__dirname, '../media/session.tcl')], {
       cwd: resolved.projectDir, shell: false, stdio: ['pipe', 'pipe', 'pipe']
     });
     session.attach();
+    session.child.once('close', () => { session.cleanupDone = cleanCompilation(buildDir, options.onOutput); });
     const cancel = () => session.close();
     options.signal?.addEventListener('abort', cancel, { once: true });
     session.child.once('close', () => options.signal?.removeEventListener('abort', cancel));
@@ -78,10 +88,10 @@ class InteractiveSession {
   }
   attach() {
     this.child.stdout.setEncoding('utf8'); this.child.stderr.setEncoding('utf8');
-    this.child.stdout.on('data', text => this.acceptOutput(text));
-    this.child.stderr.on('data', text => {
-      this.reportOutput(text);
-    });
+    const stdout = createLineMapper(this.mapText, text => this.acceptOutput(text));
+    const stderr = createLineMapper(this.mapText, text => this.reportOutput(text));
+    this.child.stdout.on('data', text => stdout.write(text)); this.child.stdout.once('end', () => stdout.end());
+    this.child.stderr.on('data', text => stderr.write(text)); this.child.stderr.once('end', () => stderr.end());
     this.child.once('error', error => this.terminated(error));
     this.child.once('close', (code, signal) => {
       const message = this.closed ? 'The interactive session is closed.' : `The interactive session ended (${code ?? signal}).`;

@@ -2,7 +2,7 @@
   "name": "nvc-runner",
   "displayName": "NVC Runner \u00b7 VHDL Simulation",
   "description": "One-click NVC simulation, input stimulus generation, persistent Surfer waveform views, and interactive sessions.",
-  "version": "0.5.1",
+  "version": "0.6.1",
   "publisher": "local-vhdl",
   "repository": {
     "type": "git",

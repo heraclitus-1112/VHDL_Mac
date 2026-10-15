@@ -291,3 +291,30 @@ test('architecture selection releases project lock before its success notificati
  const selection=s.commands.get('nvcRunner.selectArchitecture')();
  try{while(!shown)await new Promise(resolve=>setImmediate(resolve));await s.commands.get('nvcRunner.run')();assert.ok(!s.errors.some(message=>/already running or being configured/.test(message)));assert.ok(s.calls.some(([kind,text])=>kind==='output'&&text.includes('Project: ')));}finally{release();await selection;}
 });
+
+test('interactive waveform load failure restores the prior stable viewer record', {timeout:15000}, async t=>{
+ const {SurferViewer}=require('../src/viewer');const root=await fixture(t),s=fake(root);
+ const batch='/opt/homebrew/bin/nvc',interactive=path.join(os.homedir(),'.local/share/vhdl-mac/nvc-interactive-livewave/bin/nvc');
+ await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end entity tb; architecture good of tb is signal value:integer:=1; begin process begin wait for 2 ns; report "WAVE_SNAPSHOT"; wait; end process; end; architecture unfinished of tb is begin u:entity work.missing; end;');
+ await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',architecture:'good',stopTime:'all'}));
+ s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?batch:key==='interactiveNvcPath'?interactive:key==='waveformWindow'?'beside':fallback});
+ const instance=init(s);t.after(()=>instance.dispose());await s.commands.get('nvcRunner.run')();assert.deepEqual(s.errors,[]);
+ const marker=path.join(root,'.nvc-build/waveform.nvcwave'),prior=await fs.readFile(marker,'utf8');
+ const original=SurferViewer.prototype.waitLoaded;SurferViewer.prototype.waitLoaded=async()=>{throw Error('Injected renderer failure');};
+ try{await s.commands.get('nvcRunner.startInteractive')();}finally{SurferViewer.prototype.waitLoaded=original;}
+ assert.ok(s.errors.some(message=>message.includes('Injected renderer failure')));assert.equal(await fs.readFile(marker,'utf8'),prior);
+});
+
+test('cancelling interactive startup during waveform load restores the prior record', {timeout:15000}, async t=>{
+ const {SurferViewer}=require('../src/viewer');const root=await fixture(t),s=fake(root);
+ const batch='/opt/homebrew/bin/nvc',interactive=path.join(os.homedir(),'.local/share/vhdl-mac/nvc-interactive-livewave/bin/nvc');
+ await fs.writeFile(path.join(root,'tb.vhd'),'entity tb is end; architecture good of tb is signal value:integer:=1; begin process begin wait for 2 ns; report "WAVE_SNAPSHOT"; wait; end process; end;');
+ await fs.writeFile(path.join(root,'vhdl.sim.json'),JSON.stringify({sources:['tb.vhd'],top:'tb',architecture:'good',stopTime:'all'}));
+ s.vscode.workspace.getConfiguration=()=>({get:(key,fallback)=>key==='nvcPath'?batch:key==='interactiveNvcPath'?interactive:key==='waveformWindow'?'beside':fallback});
+ const instance=init(s);t.after(()=>instance.dispose());await s.commands.get('nvcRunner.run')();assert.deepEqual(s.errors,[]);
+ const marker=path.join(root,'.nvc-build/waveform.nvcwave'),prior=await fs.readFile(marker,'utf8');
+ const original=SurferViewer.prototype.waitLoaded;SurferViewer.prototype.waitLoaded=async()=>{await s.commands.get('nvcRunner.cancel')();};
+ let result;try{result=await s.commands.get('nvcRunner.startInteractive')();}finally{SurferViewer.prototype.waitLoaded=original;}
+ assert.equal(result,undefined);assert.equal(await fs.readFile(marker,'utf8'),prior);
+ assert.ok(!s.calls.some(([kind,text])=>kind==='output'&&text.includes('Interactive session started')));
+});

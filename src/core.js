@@ -4,6 +4,7 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const { prepareCompilation, createLineMapper, cleanCompilation } = require('./compilation');
 
 const IGNORED = new Set(['.nvc-build', '.git', 'node_modules', 'build', 'dist', 'out', '.vscode-test']);
 function within(root, target) { const relative = path.relative(root, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); }
@@ -78,14 +79,18 @@ function buildStageArgs(config, buildDir, wavePath) {
   ];
 }
 function abortError() { const error = new Error('Simulation cancelled.'); error.name = 'AbortError'; return error; }
-function executeStage(executable, args, cwd, signal, onOutput) {
+function executeStage(executable, args, cwd, signal, onOutput, mapText) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(abortError());
     let output = ''; let timer; let child;
     const cancel = () => { child.kill('SIGTERM'); timer = setTimeout(() => child.kill('SIGKILL'), 1500); timer.unref(); };
     try { child = spawn(executable, args, { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (error) { reject(error); return; }
     signal?.addEventListener('abort', cancel, { once: true });
-    for (const stream of [child.stdout, child.stderr]) { stream.setEncoding('utf8'); stream.on('data', text => { output += text; onOutput?.(text); }); }
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding('utf8');
+      const mapper = createLineMapper(mapText, text => { output += text; onOutput?.(text); });
+      stream.on('data', text => mapper.write(text)); stream.once('end', () => mapper.end());
+    }
     child.once('error', error => { signal?.removeEventListener('abort', cancel); clearTimeout(timer); error.output = output; reject(error); });
     child.once('close', (code, terminatedBy) => {
       signal?.removeEventListener('abort', cancel); clearTimeout(timer);
@@ -104,18 +109,30 @@ async function ownedWave(buildDir) {
     if (typeof previous.wave === 'string' && /^nvc-runner-[a-f0-9-]{36}\.fst$/.test(previous.wave)) return path.join(buildDir, previous.wave);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-async function runSimulation({ executable, executableArgs = [], projectDir, config, signal, onOutput, onStage, onResult }) {
+async function runSimulation(options) {
+  const { projectDir, config, signal, onOutput } = options;
   if (signal?.aborted) throw abortError();
   const resolved = await resolveProject(projectDir, config);
   await fs.mkdir(resolved.buildDir, { recursive: true });
+  let scratch, result;
+  try {
+    if (resolved.architecture) scratch = await fs.mkdtemp(path.join(resolved.buildDir, 'selected-'));
+    const compiled = scratch ? await prepareCompilation(resolved, scratch, signal, onOutput) : resolved;
+    result = await runCompiledSimulation(options, resolved, compiled, scratch ?? resolved.buildDir);
+    return result;
+  } finally {
+    if (scratch) await cleanCompilation(scratch, text => { if (result) result.output += text; onOutput?.(text); }, true);
+  }
+}
+async function runCompiledSimulation({ executable, executableArgs = [], signal, onOutput, onStage, onResult }, resolved, compiled, workDir) {
   const wavePath = path.join(resolved.buildDir, `nvc-runner-${randomUUID()}.fst`);
   const marker = path.join(resolved.buildDir, '.nvc-runner.json');
   try { if ((await fs.lstat(marker)).isSymbolicLink()) throw new Error('The build record cannot be a symbolic link.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let output = '';
-  for (const { stage, args } of buildStageArgs(resolved, resolved.buildDir, wavePath)) {
+  for (const { stage, args } of buildStageArgs(compiled, workDir, wavePath)) {
     if (signal?.aborted) throw abortError();
     onStage?.(stage, args);
-    try { output += await executeStage(executable, [...executableArgs, ...args], resolved.projectDir, signal, onOutput); }
+    try { output += await executeStage(executable, [...executableArgs, ...args], resolved.projectDir, signal, onOutput, compiled.mapText); }
     catch (error) { error.stage = stage; error.output = output + (error.output ?? ''); throw error; }
   }
   if (signal?.aborted) throw abortError();
