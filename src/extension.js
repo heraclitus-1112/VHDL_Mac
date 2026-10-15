@@ -242,7 +242,17 @@ function createExtension(vscode, context) {
       session = await InteractiveSession.start({ executable, projectDir: root, config, signal: controller.signal,
         onOutput: text => { output.append(text); sessionOutput = (sessionOutput + text).slice(-1048576); updateDiagnostics(sessionOutput, root); },
         onTime: () => sessionState(root),
-        onWave: async result => { await viewer.show(result, settings.get('waveformWindow', 'newWindow'), settings.get('preserveWaveformLayout', true)); await viewer.waitLoaded(root); },
+        onWave: async result => {
+          const rollback = await viewer.show(result, settings.get('waveformWindow', 'newWindow'), settings.get('preserveWaveformLayout', true), controller.signal);
+          try {
+            await viewer.waitLoaded(root);
+            if (controller.signal.aborted) { const error = new Error('仿真已取消。'); error.name = 'AbortError'; throw error; }
+          }
+          catch (error) {
+            try { await rollback?.(); } catch (restoreError) { output.appendLine(`警告：恢复上次交互波形失败：${restoreError.message}`); }
+            throw error;
+          }
+        },
         onExit: () => { if (sessions.get(root) === session) { sessions.delete(root); sessionState(root); } }
       });
       if (!session.waveSupported) { session.close(); throw new Error('当前交互 NVC 缺少原生波形快照支持。请按 tools/build-nvc-interactive.sh 安装交互版本，或使用普通仿真。'); }
