@@ -13,7 +13,7 @@ brew install nvc
 git clone https://github.com/heraclitus-1112/VHDL_Mac.git
 cd VHDL_Mac
 code --install-extension surfer-project.surfer
-code --install-extension packages/nvc-runner-0.4.0.vsix
+code --install-extension packages/nvc-runner-0.5.0.vsix
 code examples/counter
 ```
 
@@ -135,3 +135,18 @@ bash tools/build-nvc-interactive.sh --install-deps
 API：`validateConfig(data)`、`resolveProject(projectDir, data)`、`discoverSources(projectDir)`、`buildStageArgs(resolvedConfig, buildDir, wavePath)`、`runSimulation(options)`、`parseDiagnostics(output, projectDir)`、`resolveNvc(override)`，由 `src/core.js` 导出。`runSimulation` 返回 `{ wavePath, output, projectDir }`，失败抛错；支持 `AbortSignal`、`onOutput`、`onStage` 和异步 `onResult(result)`。`onResult` 在新 FST 校验后、结果提交与旧 FST 清理前接收结果；回调可返回异步回滚函数，供提交前取消或提交失败时恢复消费者状态。提交开始后到来的取消请求不会撤销已经接受的新结果。提交后的旧 FST 或临时记录清理失败会输出警告，保留已接受的新结果；提交前的原始错误与取消仍按原状态报告。
 
 真实 NVC、VS Code Extension Host 与官方 Surfer 的验收由独立测试负责，Node 单元测试本身不证明 UI 展示正确。
+
+## 选择 Testbench architecture（0.5.0）
+
+同一测试平台实体可以有多套 architecture。打开 VHDL 文件，使用编辑器右上角 `…` 或命令面板中的 **NVC: 选择 Testbench architecture**，选择要运行的一套。选择保存后，普通播放、Run All 和交互仿真都使用它；每次只运行一套，不会依次执行全部 architecture。配置向导也会提供选择；仅识别到一套时自动选中。
+
+配置分别保存实体和架构，例如：
+
+```json
+"top": "tb_mux",
+"architecture": "test1"
+```
+
+不填 `architecture` 的旧配置保持 NVC 默认选择；选择“NVC 默认选择”可移除固定选择。列表读取已配置源文件中的声明，也支持手动输入基本名称。取消不改变配置。若架构被删除或无法展开，运行会报错并保留上一份成功波形，不会自动切换到其他架构。输出中显示实际顶层，例如 `tb_mux(test1)`。交互会话启动后，先结束会话再切换。生成新 TB 并设为顶层时，选择更新为生成器的 `sim`。
+
+这个选择只影响测试平台顶层；TB 中 DUT 实例所用的架构仍按 VHDL 实例化或 configuration 规则绑定。自动扫描支持基本名称，忽略行注释、块注释和字符串；扫描上限为单文件 4 MiB、总计 16 MiB。

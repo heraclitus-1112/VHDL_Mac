@@ -2,7 +2,7 @@
   "name": "nvc-runner",
   "displayName": "NVC Runner · VHDL 仿真",
   "description": "一键 NVC 仿真、输入激励生成、持久 Surfer 波形窗口与交互会话。",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "local-vhdl",
   "repository": {
     "type": "git",
@@ -107,6 +107,10 @@
       {
         "command": "nvcRunner.stopInteractive",
         "title": "NVC: 结束交互仿真"
+      },
+      {
+        "command": "nvcRunner.selectArchitecture",
+        "title": "NVC: 选择 Testbench architecture"
       }
     ],
     "menus": {
@@ -120,6 +124,11 @@
           "command": "nvcRunner.runAll",
           "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
           "group": "nvcRunner@1"
+        },
+        {
+          "command": "nvcRunner.selectArchitecture",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "nvcRunner@2"
         }
       ],
       "explorer/context": [
@@ -132,6 +141,11 @@
           "command": "nvcRunner.runAll",
           "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
           "group": "nvcRunner@1"
+        },
+        {
+          "command": "nvcRunner.selectArchitecture",
+          "when": "resourceExtname == .vhd || resourceExtname == .vhdl",
+          "group": "nvcRunner@2"
         }
       ]
     },

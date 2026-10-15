@@ -28,3 +28,11 @@ test('updating generated target preserves existing all and longer numeric limit'
   assert.equal(config.stopTime,stopTime);if(stopTime==='all')assert.match(confirmation,/运行到结束/);
  }
 });
+
+test('generated testbench target replaces the previous architecture with sim',async t=>{
+ const root=await fixture(t);await fs.writeFile(path.join(root,'tb_e.vhd'),'');const filename=path.join(root,'vhdl.sim.json');
+ await fs.writeFile(filename,JSON.stringify({sources:['design.vhd'],top:'e',architecture:'old',stopTime:'all'}));
+ const v=fake(root,[],[]);v.window.showInformationMessage=async()=> '设置';
+ const config=await g.setSimulationTarget(v,root,{name:'tb_e',filename:path.join(root,'tb_e.vhd'),source:path.join(root,'design.vhd'),duration:'100ns'});
+ assert.equal(config.top,'tb_e');assert.equal(config.architecture,'sim');
+});

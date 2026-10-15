@@ -106,7 +106,7 @@ async function setSimulationTarget(vscode, root, result) {
   }
   config = { ...config, sources: retained };
   if (!config.sources.includes(source)) config.sources.push(source);
-  config.sources.push(generated); config.top = result.name; config.standard = '2008';
+  config.sources.push(generated); config.top = result.name; config.architecture = 'sim'; config.standard = '2008';
   if (config.stopTime !== 'all' && tb.timeFs(config.stopTime) < tb.timeFs(result.duration)) config.stopTime = result.duration;
   core.validateConfig(config); await core.resolveProject(root, config);
   const cleanup = missing.length ? `\n将从配置中移除已删除的源文件：${missing.join('、')}。若仍需要这些依赖，请取消并重新配置。` : '';

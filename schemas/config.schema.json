@@ -54,6 +54,11 @@
       "maximum": 1000000,
       "default": 0,
       "description": "将最多包含该数量元素的嵌套数组写入波形；0关闭。较大的值增加内存和波形文件大小。"
+    },
+    "architecture": {
+      "description": "可选的顶层测试平台 architecture；省略时使用 NVC 默认选择。",
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"
     }
   }
 }

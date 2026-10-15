@@ -4,6 +4,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const core = require('./core');
 const generator = require('./generate');
+const { chooseArchitecture } = require('./architecture');
 const { SurferViewer } = require('./viewer');
 const { InteractiveSession, durationParts } = require('./interactive');
 const os = require('node:os');
@@ -85,9 +86,9 @@ function createExtension(vscode, context) {
   async function configure(uri) {
     const saved = await withProject(uri, false, async (_, root) => {
       const filename = await configPath(root);
-      let previousStopTime;
+      let previousStopTime, previous;
       try {
-        const previous = JSON.parse(await fs.readFile(filename, 'utf8'));
+        previous = JSON.parse(await fs.readFile(filename, 'utf8'));
         const value = previous?.stopTime ?? '1us';
         if (value === 'all' || typeof value === 'string' && /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value)) previousStopTime = value;
       } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
@@ -104,6 +105,9 @@ function createExtension(vscode, context) {
       }
       const top = await vscode.window.showInputBox({ title: '确认顶层测试平台实体名称', value: path.basename(ordered.at(-1)).replace(/\.vhdl?$/i, ''), ignoreFocusOut: true, validateInput: value => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/i.test(value) ? undefined : '请输入有效的 VHDL 基本实体名称' });
       if (top === undefined) return;
+      const resolved = await core.resolveProject(root, { sources: ordered, top });
+      const selectedArchitecture = await chooseArchitecture(vscode, resolved.sources, top, previous?.top?.toLowerCase() === top.toLowerCase() ? previous.architecture : undefined, false);
+      if (!selectedArchitecture) return;
       const standard = await vscode.window.showQuickPick(['2008', '2002', '1993'], { title: '选择 VHDL 标准', ignoreFocusOut: true }); if (!standard) return;
       const defaultMode = previousStopTime === undefined || previousStopTime === 'all' ? 'all' : 'time';
       const modes = [
@@ -119,7 +123,7 @@ function createExtension(vscode, context) {
         stopTime = await vscode.window.showInputBox({ title: '仿真停止时间', value: previousStopTime && previousStopTime !== 'all' ? previousStopTime : '1us', ignoreFocusOut: true, validateInput: value => /^[1-9][0-9]*(fs|ps|ns|us|ms|sec)$/.test(value) ? undefined : '正整数加 fs/ps/ns/us/ms/sec，例如 1us' });
         if (stopTime === undefined) return;
       }
-      const config = core.validateConfig({ sources: ordered, top, standard, stopTime, libraryPaths: [] });
+      const config = core.validateConfig({ sources: ordered, top, ...selectedArchitecture, standard, stopTime, libraryPaths: [] });
       await core.resolveProject(root, config);
       try {
         await fs.stat(filename);
@@ -134,6 +138,33 @@ function createExtension(vscode, context) {
       return true;
     });
     if (saved) await vscode.window.showInformationMessage('VHDL 仿真配置已保存，点击播放按钮即可运行。');
+  }
+  async function selectArchitecture(uri) {
+    const saved = await withProject(uri, false, async (_, root) => {
+      const filename = await configPath(root);
+      const dirtyConfig = () => vscode.workspace.textDocuments.some(doc => doc.isDirty && doc.uri.fsPath === filename);
+      if (dirtyConfig()) throw new Error('vhdl.sim.json 有未保存修改，请先保存再选择 architecture。');
+      let snapshot;
+      try { snapshot = await fs.readFile(filename, 'utf8'); }
+      catch (error) { if (error.code === 'ENOENT') throw new Error('请先运行“NVC: 配置 VHDL 仿真”，再选择 architecture。'); throw error; }
+      const config = core.validateConfig(JSON.parse(snapshot));
+      const resolved = await core.resolveProject(root, config);
+      const choice = await chooseArchitecture(vscode, resolved.sources, config.top, config.architecture);
+      if (!choice) return;
+      const next = { ...config }; delete next.architecture;
+      if (choice.architecture !== undefined) next.architecture = choice.architecture;
+      core.validateConfig(next);
+      checkTrust(); await configPath(root);
+      if (dirtyConfig()) throw new Error('配置存在未保存修改，已停止更新。');
+      if (await fs.readFile(filename, 'utf8') !== snapshot) throw new Error('选择期间配置文件发生变化，已停止更新，请重试。');
+      const temporary = path.join(root, `.vhdl-sim-${randomUUID()}.tmp`);
+      try { await fs.writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: 'wx' }); await fs.rename(temporary, filename); }
+      finally { await fs.unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+      output.appendLine(`仿真顶层：${core.designTarget(next)}${next.architecture ? '' : '（NVC 默认 architecture）'}`);
+      return next;
+    });
+    if (saved) await vscode.window.showInformationMessage(`已选择 ${core.designTarget(saved)}，点击播放按钮运行。`);
+    return saved;
   }
   async function run(uri, stopTimeOverride) {
     return withProject(uri, true, async (folder, root, controller) => {
@@ -152,7 +183,7 @@ function createExtension(vscode, context) {
       const executable = await core.resolveNvc(vscode.workspace.getConfiguration('nvcRunner', folder.uri).get('nvcPath', ''));
       const surfer = vscode.extensions.getExtension('surfer-project.surfer');
       if (!surfer) throw new Error('缺少官方 Surfer 扩展，请安装 surfer-project.surfer 后重试。');
-      output.show(true); output.appendLine(`\n项目：${root}\nNVC：${executable}`);
+      output.show(true); output.appendLine(`\n项目：${root}\nNVC：${executable}\n仿真顶层：${core.designTarget(config)}`);
       output.appendLine(config.stopTime === 'all' ? '运行模式：运行到结束（Run All）' : `运行模式：运行到指定时间（${config.stopTime}）`);
       return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'NVC VHDL 仿真', cancellable: true }, async (progress, token) => {
         const disposable = token.onCancellationRequested(() => controller.abort());
@@ -206,7 +237,7 @@ function createExtension(vscode, context) {
       const config = core.validateConfig(JSON.parse(await fs.readFile(filename, 'utf8')));
       const settings = vscode.workspace.getConfiguration('nvcRunner', folder.uri);
       const executable = await core.resolveNvc(settings.get('interactiveNvcPath', '') || path.join(os.homedir(), '.local/share/vhdl-mac/nvc-interactive-livewave/bin/nvc'));
-      output.show(true); output.appendLine(`\n启动交互仿真：${root}\nNVC：${executable}`);
+      output.show(true); output.appendLine(`\n启动交互仿真：${root}\nNVC：${executable}\n仿真顶层：${core.designTarget(config)}`);
       let session, sessionOutput = '';
       session = await InteractiveSession.start({ executable, projectDir: root, config, signal: controller.signal,
         onOutput: text => { output.append(text); sessionOutput = (sessionOutput + text).slice(-1048576); updateDiagnostics(sessionOutput, root); },
@@ -259,7 +290,7 @@ function createExtension(vscode, context) {
   }
   viewer.onControl = controlInteractive;
   async function controlFromCommand(uri, action) { const folder = await selectFolder(uri); if (folder) await controlInteractive(await fs.realpath(folder.uri.fsPath), action); }
-  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.runAll', runAll), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
+  context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.configure', configure), vscode.commands.registerCommand('nvcRunner.selectArchitecture', selectArchitecture), vscode.commands.registerCommand('nvcRunner.run', run), vscode.commands.registerCommand('nvcRunner.runAll', runAll), vscode.commands.registerCommand('nvcRunner.cancel', cancel), vscode.commands.registerCommand('nvcRunner.generateTestbench', generate));
   context.subscriptions.push(vscode.commands.registerCommand('nvcRunner.startInteractive', startInteractive));
   for (const [command, action] of Object.entries({ stepInteractive: 'step', continueInteractive: 'continue', pauseInteractive: 'pause', forceSignal: 'force', releaseSignal: 'release', examineSignal: 'inspect', stopInteractive: 'stop' })) context.subscriptions.push(vscode.commands.registerCommand(`nvcRunner.${command}`, uri => controlFromCommand(uri, action)));
   return { dispose() { for (const entry of locks.values()) entry.controller.abort(); for (const session of sessions.values()) session.close(); }, run, runAll, configure, cancel, generate, startInteractive, controlInteractive };
